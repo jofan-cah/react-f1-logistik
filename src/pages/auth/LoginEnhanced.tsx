@@ -36,9 +36,7 @@ const LoginEnhanced: React.FC = () => {
       if (success) {
         navigate('/dashboard');
       }
-    } catch (err) {
-      console.error('Login error:', err);
-    }
+  
   };
 
   return (
