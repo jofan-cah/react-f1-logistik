@@ -2,8 +2,8 @@
 import axios from 'axios';
 
 // Base URL untuk API
-// const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const baseURL = import.meta.env.VITE_API_URL || 'https://nr9g70q7-5000.asse.devtunnels.ms/api';
+const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// const baseURL = import.meta.env.VITE_API_URL || 'https://nr9g70q7-5000.asse.devtunnels.ms/api';
 
 // Buat instance axios
 export const api = axios.create({
