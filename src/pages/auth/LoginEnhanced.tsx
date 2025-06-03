@@ -124,9 +124,6 @@ const LoginEnhanced: React.FC = () => {
                   placeholder="Enter your password"
                   autoComplete="current-password"
                   {...register('password')}
-                />d"
-                  autoComplete="current-password"
-                  {...register('password')}
                 />
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                   <button
