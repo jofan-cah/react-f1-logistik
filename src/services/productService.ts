@@ -181,7 +181,7 @@ export const productService = {
     }
 
     // Build URL based on your backend setup
-    const baseUrl = 'http://localhost:5000';
+    const baseUrl = import.meta.env.VITE_API_URL;
     return `${baseUrl}/uploads/products/${filename}`;
   },
 

@@ -252,7 +252,7 @@ const ProductForm = () => {
       // Set image preview if exists
       if (currentProduct.img_product) {
         // Assuming the img_product contains the full URL or relative path
-        setImagePreview(`http://localhost:5000/uploads/products/${currentProduct.img_product}`);
+        setImagePreview(`${import.meta.env.VITE_API_URL}/uploads/products/${currentProduct.img_product}`);
       }
     }
   }, [currentProduct, isEdit]);
