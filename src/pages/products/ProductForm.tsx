@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Save, ArrowLeft, Package, Building2, Tag, MapPin, Calendar, DollarSign, FileText, AlertCircle, CheckCircle, Truck, Wrench } from 'lucide-react';
+import { Save, ArrowLeft, Package, Building2, Tag, MapPin, Calendar, DollarSign, FileText, AlertCircle, CheckCircle, Truck, Wrench, Upload, X, Image } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useProductStore } from '../../store/useProductStore';
 import { useCategoryStore } from '../../store/useCategoryStore';
 import { useSupplierStore } from '../../store/useSupplierStore';
 import { CreateProductRequest, UpdateProductRequest } from '../../types/product.types';
 
-// Form data interface - FIXED: TAMBAH product_id
+// Form data interface - UPDATED: Added img_product
 interface ProductFormData {
-  product_id: string;  // TAMBAH INI
+  product_id: string;
   name: string;
   category_id: string;
   brand: string;
@@ -20,6 +20,7 @@ interface ProductFormData {
   po_number: string;
   description: string;
   location: string;
+  img_product: string;  // NEW: Added image field
   status: string;
   condition: string;
   quantity: string;
@@ -70,6 +71,12 @@ const ProductForm = () => {
   const { darkMode } = useTheme();
   const isEdit = Boolean(id && id !== 'create');
 
+  // NEW: File input reference
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageError, setImageError] = useState<string>('');
+
   // Get supplier_id from URL params if creating new product
   const preselectedSupplierId = searchParams.get('supplier_id');
 
@@ -99,10 +106,10 @@ const ProductForm = () => {
 
   // Local state
   const [productId, setProductId] = useState<string>('');
-  
-  // FIXED: Initial state dengan product_id
+
+  // UPDATED: Initial state with img_product
   const [formData, setFormData] = useState<ProductFormData>({
-    product_id: '', // SEKARANG ADA DI INTERFACE
+    product_id: '',
     name: '',
     category_id: '',
     brand: '',
@@ -113,6 +120,7 @@ const ProductForm = () => {
     po_number: '',
     description: '',
     location: '',
+    img_product: '',  // NEW: Added image field
     status: 'Available',
     condition: 'New',
     quantity: '1',
@@ -129,6 +137,59 @@ const ProductForm = () => {
   const [errors, setErrors] = useState<Partial<ProductFormData>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setImageError('');
+
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setImageError('Format file tidak didukung. Gunakan JPG, PNG, atau WebP.');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      setImageError('Ukuran file terlalu besar. Maksimal 5MB.');
+      return;
+    }
+
+    console.log('=== FILE SELECTED ===');
+    console.log('File:', file);
+    console.log('File name:', file.name);
+    console.log('File size:', file.size);
+    console.log('File type:', file.type);
+
+    setImageFile(file);
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setImagePreview(result);
+      // ❌ HAPUS INI: handleInputChange('img_product', file.name);
+      // ✅ JANGAN set img_product di sini - tunggu upload selesai
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setImageFile(null);
+    setImagePreview('');
+    setImageError('');
+    handleInputChange('img_product', '');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
   // Load initial data
   useEffect(() => {
     fetchCategories();
@@ -141,12 +202,11 @@ const ProductForm = () => {
     };
   }, [fetchCategories, fetchSuppliers, clearCurrentProduct, clearProductError]);
 
-  // FIXED: Generate product ID for new products dan update formData
+  // Generate product ID for new products and update formData
   useEffect(() => {
     if (!isEdit) {
       const newId = `PRD-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100).toString().padStart(2, '0')}`;
       setProductId(newId);
-      // UPDATE FORM DATA JUGA
       setFormData(prev => ({ ...prev, product_id: newId }));
     }
   }, [isEdit]);
@@ -158,13 +218,13 @@ const ProductForm = () => {
     }
   }, [isEdit, id, getProductById]);
 
-  // FIXED: Populate form when product data is loaded
+  // UPDATED: Populate form when product data is loaded (including image)
   useEffect(() => {
     if (currentProduct && isEdit) {
       setProductId(currentProduct.product_id);
-      
+
       setFormData({
-        product_id: currentProduct.product_id, // SEKARANG BISA DITAMBAH
+        product_id: currentProduct.product_id,
         name: currentProduct.name,
         category_id: currentProduct.category_id.toString(),
         brand: currentProduct.brand || '',
@@ -175,6 +235,7 @@ const ProductForm = () => {
         po_number: currentProduct.po_number || '',
         description: currentProduct.description || '',
         location: currentProduct.location || '',
+        img_product: currentProduct.img_product || '',  // NEW: Set image
         status: currentProduct.status,
         condition: currentProduct.condition,
         quantity: currentProduct.quantity.toString(),
@@ -187,6 +248,12 @@ const ProductForm = () => {
         is_linked_to_ticketing: currentProduct.is_linked_to_ticketing,
         notes: currentProduct.notes || ''
       });
+
+      // Set image preview if exists
+      if (currentProduct.img_product) {
+        // Assuming the img_product contains the full URL or relative path
+        setImagePreview(`http://localhost:5000/uploads/products/${currentProduct.img_product}`);
+      }
     }
   }, [currentProduct, isEdit]);
 
@@ -242,87 +309,144 @@ const ProductForm = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // FIXED: handleSubmit dengan product_id
+  // ✅ HANDLE SUBMIT YANG BENAR - Upload file dulu, baru submit form
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validate()) return;
 
     setIsSubmitting(true);
     clearProductError();
-    
+
     try {
       let success = false;
+      let finalFormData = { ...formData };
 
-      // Debug: Log data yang akan dikirim
+      console.log('=== SUBMIT START ===');
       console.log('Form Data:', formData);
       console.log('Product ID:', productId);
+      console.log('Image File:', imageFile);
+      console.log('Current img_product:', formData.img_product);
 
-      if (isEdit && id) {
-        // Update existing product
-        const updateData: UpdateProductRequest = {
-          product_id: formData.product_id || productId, // GUNAKAN DARI FORM DATA
-          name: formData.name.trim(),
-          category_id: parseInt(formData.category_id),
-          brand: formData.brand.trim() || undefined,
-          model: formData.model.trim() || undefined,
-          serial_number: formData.serial_number.trim() || undefined,
-          origin: formData.origin || undefined,
-          supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : undefined,
-          po_number: formData.po_number.trim() || undefined,
-          description: formData.description.trim() || undefined,
-          location: formData.location || undefined,
-          status: formData.status,
-          condition: formData.condition,
-          quantity: parseInt(formData.quantity),
-          purchase_date: formData.purchase_date || undefined,
-          purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
-          warranty_expiry: formData.warranty_expiry || undefined,
-          last_maintenance_date: formData.last_maintenance_date || undefined,
-          next_maintenance_date: formData.next_maintenance_date || undefined,
-          ticketing_id: formData.ticketing_id.trim() || undefined,
-          is_linked_to_ticketing: formData.is_linked_to_ticketing,
-          notes: formData.notes.trim() || undefined
-        };
-        
-        console.log('Updating with data:', updateData);
-        success = await updateProduct(id, updateData);
+      // 🔥 STEP 1: Upload gambar DULU jika ada file baru
+      if (imageFile) {
+        console.log('=== UPLOADING IMAGE FIRST ===');
+        console.log('Image file to upload:', {
+          name: imageFile.name,
+          size: imageFile.size,
+          type: imageFile.type
+        });
+
+        try {
+          // Upload menggunakan store method
+          const uploadedFilename = await useProductStore.getState().uploadProductImage(imageFile);
+
+          if (uploadedFilename) {
+            console.log('✅ Upload SUCCESS, server filename:', uploadedFilename);
+            // ✅ PENTING: Set img_product dengan filename dari server
+            finalFormData.img_product = uploadedFilename;
+          } else {
+            console.log('❌ Upload FAILED - no filename returned');
+            throw new Error('Upload gambar gagal - tidak ada filename');
+          }
+        } catch (uploadError) {
+          console.error('❌ Upload ERROR:', uploadError);
+          throw new Error(`Upload gambar gagal: ${uploadError.message}`);
+        }
       } else {
-        // Create new product
-        const createData: CreateProductRequest = {
-          product_id: formData.product_id || productId, // FIXED: TAMBAH PRODUCT_ID
-          name: formData.name.trim(),
-          category_id: parseInt(formData.category_id),
-          brand: formData.brand.trim() || undefined,
-          model: formData.model.trim() || undefined,
-          serial_number: formData.serial_number.trim() || undefined,
-          origin: formData.origin || undefined,
-          supplier_id: formData.supplier_id ? parseInt(formData.supplier_id) : undefined,
-          po_number: formData.po_number.trim() || undefined,
-          description: formData.description.trim() || undefined,
-          location: formData.location || undefined,
-          status: formData.status,
-          condition: formData.condition,
-          quantity: parseInt(formData.quantity),
-          purchase_date: formData.purchase_date || undefined,
-          purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
-          warranty_expiry: formData.warranty_expiry || undefined,
-          last_maintenance_date: formData.last_maintenance_date || undefined,
-          next_maintenance_date: formData.next_maintenance_date || undefined,
-          ticketing_id: formData.ticketing_id.trim() || undefined,
-          is_linked_to_ticketing: formData.is_linked_to_ticketing,
-          notes: formData.notes.trim() || undefined
+        console.log('=== NO NEW IMAGE FILE ===');
+        // Jika tidak ada file baru, gunakan img_product yang sudah ada (untuk edit)
+        console.log('Using existing img_product:', formData.img_product);
+      }
+
+      console.log('=== PREPARING FORM DATA ===');
+      console.log('Final img_product:', finalFormData.img_product);
+
+      // 🔥 STEP 2: Siapkan data untuk API
+      if (isEdit && id) {
+        console.log('=== UPDATING PRODUCT ===');
+
+        const updateData: UpdateProductRequest = {
+          product_id: finalFormData.product_id || productId,
+          name: finalFormData.name.trim(),
+          category_id: parseInt(finalFormData.category_id),
+          brand: finalFormData.brand.trim() || undefined,
+          model: finalFormData.model.trim() || undefined,
+          serial_number: finalFormData.serial_number.trim() || undefined,
+          origin: finalFormData.origin || undefined,
+          supplier_id: finalFormData.supplier_id ? parseInt(finalFormData.supplier_id) : undefined,
+          po_number: finalFormData.po_number.trim() || undefined,
+          description: finalFormData.description.trim() || undefined,
+          location: finalFormData.location || undefined,
+          img_product: finalFormData.img_product || undefined,  // ✅ Filename dari server
+          status: finalFormData.status,
+          condition: finalFormData.condition,
+          quantity: parseInt(finalFormData.quantity),
+          purchase_date: finalFormData.purchase_date || undefined,
+          purchase_price: finalFormData.purchase_price ? parseFloat(finalFormData.purchase_price) : undefined,
+          warranty_expiry: finalFormData.warranty_expiry || undefined,
+          last_maintenance_date: finalFormData.last_maintenance_date || undefined,
+          next_maintenance_date: finalFormData.next_maintenance_date || undefined,
+          ticketing_id: finalFormData.ticketing_id.trim() || undefined,
+          is_linked_to_ticketing: finalFormData.is_linked_to_ticketing,
+          notes: finalFormData.notes.trim() || undefined
         };
-        
-        console.log('Creating with data:', createData);
+
+        console.log('UPDATE data being sent:', updateData);
+        success = await updateProduct(id, updateData);
+
+      } else {
+        console.log('=== CREATING PRODUCT ===');
+
+        const createData: CreateProductRequest = {
+          product_id: finalFormData.product_id || productId,
+          name: finalFormData.name.trim(),
+          category_id: parseInt(finalFormData.category_id),
+          brand: finalFormData.brand.trim() || undefined,
+          model: finalFormData.model.trim() || undefined,
+          serial_number: finalFormData.serial_number.trim() || undefined,
+          origin: finalFormData.origin || undefined,
+          supplier_id: finalFormData.supplier_id ? parseInt(finalFormData.supplier_id) : undefined,
+          po_number: finalFormData.po_number.trim() || undefined,
+          description: finalFormData.description.trim() || undefined,
+          location: finalFormData.location || undefined,
+          img_product: finalFormData.img_product || undefined,  // ✅ Filename dari server
+          status: finalFormData.status,
+          condition: finalFormData.condition,
+          quantity: parseInt(finalFormData.quantity),
+          purchase_date: finalFormData.purchase_date || undefined,
+          purchase_price: finalFormData.purchase_price ? parseFloat(finalFormData.purchase_price) : undefined,
+          warranty_expiry: finalFormData.warranty_expiry || undefined,
+          last_maintenance_date: finalFormData.last_maintenance_date || undefined,
+          next_maintenance_date: finalFormData.next_maintenance_date || undefined,
+          ticketing_id: finalFormData.ticketing_id.trim() || undefined,
+          is_linked_to_ticketing: finalFormData.is_linked_to_ticketing,
+          notes: finalFormData.notes.trim() || undefined
+        };
+
+        console.log('CREATE data being sent:', createData);
         success = await createProduct(createData);
       }
 
       if (success) {
+        console.log('✅ FORM SUBMIT SUCCESS');
         navigate('/products');
+      } else {
+        console.log('❌ FORM SUBMIT FAILED');
+        throw new Error('Gagal menyimpan data produk');
       }
+
     } catch (error) {
-      console.error('Error saving product:', error);
+      console.error('=== SUBMIT ERROR ===');
+      console.error('Error details:', error);
+
+      // Set error untuk ditampilkan ke user
+      if (error.message.includes('Upload gambar gagal')) {
+        setImageError(error.message);
+      } else {
+        // Error lain, biarkan store handle
+        console.error('Non-image error:', error);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -395,8 +519,8 @@ const ProductForm = () => {
             onClick={handleCancel}
             className={`
               flex items-center text-sm mb-4 transition-colors
-              ${darkMode 
-                ? 'text-gray-400 hover:text-gray-200' 
+              ${darkMode
+                ? 'text-gray-400 hover:text-gray-200'
                 : 'text-gray-600 hover:text-gray-900'
               }
             `}
@@ -404,7 +528,7 @@ const ProductForm = () => {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Kembali ke Daftar Produk
           </button>
-          
+
           <div className="flex items-center space-x-4">
             <div className={`
               w-12 h-12 rounded-xl flex items-center justify-center
@@ -417,8 +541,8 @@ const ProductForm = () => {
                 {isEdit ? 'Edit Produk' : 'Tambah Produk Baru'}
               </h1>
               <p className={`mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                {isEdit 
-                  ? 'Perbarui informasi dan detail produk' 
+                {isEdit
+                  ? 'Perbarui informasi dan detail produk'
                   : 'Tambahkan produk baru ke dalam inventori'}
               </p>
               {(formData.product_id || productId) && (
@@ -461,9 +585,8 @@ const ProductForm = () => {
             {/* Left Column - Main Information */}
             <div className="lg:col-span-2 space-y-8">
               {/* Basic Information */}
-              <div className={`rounded-xl border shadow-sm ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
+              <div className={`rounded-xl border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                }`}>
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                   <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Informasi Dasar
@@ -472,14 +595,13 @@ const ProductForm = () => {
                     Detail utama produk dan identifikasi
                   </p>
                 </div>
-                
+
                 <div className="p-6 space-y-6">
                   {/* Product Name & Category */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Nama Produk *
                       </label>
                       <div className="relative">
@@ -507,9 +629,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Kategori *
                       </label>
                       <div className="relative">
@@ -542,12 +663,99 @@ const ProductForm = () => {
                     </div>
                   </div>
 
+                  {/* NEW: Product Image Upload */}
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
+                      Gambar Produk
+                    </label>
+
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+
+                    {/* Image preview area */}
+                    <div className={`
+                      w-full border-2 border-dashed rounded-lg transition-colors
+                      ${imagePreview
+                        ? 'border-green-300 bg-green-50 dark:bg-green-900/20 dark:border-green-700'
+                        : darkMode
+                          ? 'border-gray-600 bg-gray-700/50 hover:border-gray-500'
+                          : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+                      }
+                    `}>
+                      {imagePreview ? (
+                        <div className="relative p-4">
+                          <div className="relative max-w-xs mx-auto">
+                            <img
+                              src={imagePreview}
+                              alt="Preview"
+                              className="w-full h-48 object-cover rounded-lg shadow-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={removeImage}
+                              className="absolute -top-2 -right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="text-center mt-4">
+                            <p className={`text-sm ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
+                              {imageFile ? imageFile.name : 'Gambar berhasil dimuat'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={triggerFileInput}
+                              className={`mt-2 text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300`}
+                            >
+                              Ganti gambar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center">
+                          <Image className={`w-12 h-12 mx-auto mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-400'}`} />
+                          <p className={`text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                            Upload gambar produk
+                          </p>
+                          <p className={`text-xs mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            PNG, JPG, WebP hingga 5MB
+                          </p>
+                          <button
+                            type="button"
+                            onClick={triggerFileInput}
+                            className={`
+                              inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg transition-colors
+                              ${darkMode
+                                ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                              }
+                            `}
+                          >
+                            <Upload className="w-4 h-4 mr-2" />
+                            Pilih Gambar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Image error message */}
+                    {imageError && (
+                      <p className="mt-2 text-sm text-red-600">{imageError}</p>
+                    )}
+                  </div>
+
                   {/* Brand & Model */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Brand/Merek
                       </label>
                       <input
@@ -567,9 +775,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Model/Tipe
                       </label>
                       <input
@@ -592,9 +799,8 @@ const ProductForm = () => {
                   {/* Serial Number & Origin */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Nomor Seri
                       </label>
                       <input
@@ -614,9 +820,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Asal Produk
                       </label>
                       <select
@@ -643,9 +848,8 @@ const ProductForm = () => {
 
                   {/* Description */}
                   <div>
-                    <label className={`block text-sm font-medium mb-2 ${
-                      darkMode ? 'text-gray-200' : 'text-gray-700'
-                    }`}>
+                    <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
                       Deskripsi
                     </label>
                     <div className="relative">
@@ -670,9 +874,8 @@ const ProductForm = () => {
               </div>
 
               {/* Purchase Information */}
-              <div className={`rounded-xl border shadow-sm ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
+              <div className={`rounded-xl border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                }`}>
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                   <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Informasi Pembelian
@@ -681,14 +884,13 @@ const ProductForm = () => {
                     Detail pembelian dan vendor
                   </p>
                 </div>
-                
+
                 <div className="p-6 space-y-6">
                   {/* Supplier & PO Number */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Supplier
                       </label>
                       <div className="relative">
@@ -716,9 +918,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Nomor PO
                       </label>
                       <input
@@ -741,9 +942,8 @@ const ProductForm = () => {
                   {/* Purchase Date & Price */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Tanggal Pembelian
                       </label>
                       <div className="relative">
@@ -765,9 +965,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Harga Pembelian
                       </label>
                       <div className="relative">
@@ -801,9 +1000,8 @@ const ProductForm = () => {
                   {/* Warranty & Quantity */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Berakhir Garansi
                       </label>
                       <div className="relative">
@@ -830,9 +1028,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Jumlah *
                       </label>
                       <input
@@ -860,9 +1057,8 @@ const ProductForm = () => {
               </div>
 
               {/* Status & Maintenance */}
-              <div className={`rounded-xl border shadow-sm ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
+              <div className={`rounded-xl border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                }`}>
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                   <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Status & Pemeliharaan
@@ -871,14 +1067,13 @@ const ProductForm = () => {
                     Status saat ini dan jadwal pemeliharaan
                   </p>
                 </div>
-                
+
                 <div className="p-6 space-y-6">
                   {/* Status & Condition */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Status *
                       </label>
                       <select
@@ -907,9 +1102,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Kondisi *
                       </label>
                       <select
@@ -940,9 +1134,8 @@ const ProductForm = () => {
 
                   {/* Location */}
                   <div>
-                    <label className={`block text-sm font-medium mb-2 ${
-                      darkMode ? 'text-gray-200' : 'text-gray-700'
-                    }`}>
+                    <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
                       Lokasi
                     </label>
                     <div className="relative">
@@ -972,9 +1165,8 @@ const ProductForm = () => {
                   {/* Maintenance Dates */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Pemeliharaan Terakhir
                       </label>
                       <div className="relative">
@@ -996,9 +1188,8 @@ const ProductForm = () => {
                     </div>
 
                     <div>
-                      <label className={`block text-sm font-medium mb-2 ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Pemeliharaan Berikutnya
                       </label>
                       <div className="relative">
@@ -1030,18 +1221,16 @@ const ProductForm = () => {
                         onChange={(e) => handleInputChange('is_linked_to_ticketing', e.target.checked)}
                         className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                       />
-                      <label htmlFor="is_linked_to_ticketing" className={`text-sm font-medium ${
-                        darkMode ? 'text-gray-200' : 'text-gray-700'
-                      }`}>
+                      <label htmlFor="is_linked_to_ticketing" className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                        }`}>
                         Terhubung dengan sistem tiket
                       </label>
                     </div>
-                    
+
                     {formData.is_linked_to_ticketing && (
                       <div>
-                        <label className={`block text-sm font-medium mb-2 ${
-                          darkMode ? 'text-gray-200' : 'text-gray-700'
-                        }`}>
+                        <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                          }`}>
                           ID Sistem Tiket *
                         </label>
                         <input
@@ -1069,9 +1258,8 @@ const ProductForm = () => {
 
                   {/* Notes */}
                   <div>
-                    <label className={`block text-sm font-medium mb-2 ${
-                      darkMode ? 'text-gray-200' : 'text-gray-700'
-                    }`}>
+                    <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
                       Catatan
                     </label>
                     <div className="relative">
@@ -1100,9 +1288,8 @@ const ProductForm = () => {
             <div className="space-y-6">
               {/* Product ID Display */}
               {(formData.product_id || productId) && (
-                <div className={`rounded-xl border shadow-sm ${
-                  darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-                }`}>
+                <div className={`rounded-xl border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                  }`}>
                   <div className="p-6">
                     <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                       ID Produk
@@ -1119,10 +1306,28 @@ const ProductForm = () => {
                 </div>
               )}
 
+              {/* Image Preview in Summary */}
+              {imagePreview && (
+                <div className={`rounded-xl border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                  }`}>
+                  <div className="p-6">
+                    <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Preview Gambar
+                    </h3>
+                    <div className="aspect-square w-full max-w-xs mx-auto">
+                      <img
+                        src={imagePreview}
+                        alt="Product preview"
+                        className="w-full h-full object-cover rounded-lg shadow-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Form Summary */}
-              <div className={`rounded-xl border shadow-sm ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
+              <div className={`rounded-xl border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                }`}>
                 <div className="p-6">
                   <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Ringkasan
@@ -1148,9 +1353,8 @@ const ProductForm = () => {
                       <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                         Status:
                       </span>
-                      <span className={`text-sm font-medium ${
-                        statusOptions.find(s => s.value === formData.status)?.color || (darkMode ? 'text-white' : 'text-gray-900')
-                      }`}>
+                      <span className={`text-sm font-medium ${statusOptions.find(s => s.value === formData.status)?.color || (darkMode ? 'text-white' : 'text-gray-900')
+                        }`}>
                         {formData.status || '-'}
                       </span>
                     </div>
@@ -1158,9 +1362,8 @@ const ProductForm = () => {
                       <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                         Kondisi:
                       </span>
-                      <span className={`text-sm font-medium ${
-                        conditionOptions.find(c => c.value === formData.condition)?.color || (darkMode ? 'text-white' : 'text-gray-900')
-                      }`}>
+                      <span className={`text-sm font-medium ${conditionOptions.find(c => c.value === formData.condition)?.color || (darkMode ? 'text-white' : 'text-gray-900')
+                        }`}>
                         {formData.condition || '-'}
                       </span>
                     </div>
@@ -1172,14 +1375,22 @@ const ProductForm = () => {
                         {formData.quantity || '0'}
                       </span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Gambar:
+                      </span>
+                      <span className={`text-sm font-medium ${formData.img_product ? 'text-green-600 dark:text-green-400' : (darkMode ? 'text-gray-400' : 'text-gray-500')
+                        }`}>
+                        {formData.img_product ? '✓ Ada' : 'Tidak ada'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Form Actions */}
-              <div className={`rounded-xl border shadow-sm ${
-                darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-              }`}>
+              <div className={`rounded-xl border shadow-sm ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                }`}>
                 <div className="p-6 space-y-4">
                   <button
                     type="submit"
@@ -1202,7 +1413,7 @@ const ProductForm = () => {
                       </>
                     )}
                   </button>
-                  
+
                   <button
                     type="button"
                     onClick={handleCancel}
