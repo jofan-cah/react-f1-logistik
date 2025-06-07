@@ -8,9 +8,10 @@ import {
   UserFilters,
   ApiResponse 
 } from '../types/user.types';
+import { userLevelService } from './userLevelService';
 
 export const userService = {
-  // Get all users (Note: Backend doesn't support pagination yet, so we handle it on frontend)
+  // Get all users
   async getUsers(
     page: number = 1, 
     limit: number = 10, 
@@ -104,46 +105,21 @@ export const userService = {
     }
   },
 
-  // Get user levels (mock for now since not in controller)
+  // Get user levels - directly from backend since it's working
   async getUserLevels(): Promise<ApiResponse<UserLevel[]>> {
     try {
-      // Mock user levels since backend doesn't have this endpoint yet
-      const mockUserLevels: UserLevel[] = [
-        { 
-          id: 'admin', 
-          name: 'Administrator', 
-          description: 'Full system access',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        { 
-          id: 'manager', 
-          name: 'Manager', 
-          description: 'Department management',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        { 
-          id: 'staff', 
-          name: 'Staff', 
-          description: 'Standard user access',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        { 
-          id: 'viewer', 
-          name: 'Viewer', 
-          description: 'Read-only access',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      ];
-
-      return {
-        success: true,
-        data: mockUserLevels,
-        message: 'User levels fetched successfully'
-      };
+      console.log('UserService - Getting user levels from backend');
+      const response = await api.get('/user-levels');
+      
+      if (response.data.success && response.data.data) {
+        return {
+          success: true,
+          data: response.data.data,
+          message: response.data.message || 'User levels fetched successfully'
+        };
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch user levels');
+      }
     } catch (error: any) {
       console.error('UserService - Error getting user levels:', error);
       throw error;
@@ -164,6 +140,20 @@ export const userService = {
   // Create new user
   async createUser(data: CreateUserRequest): Promise<ApiResponse<User>> {
     try {
+      // Validate user level exists
+      const userLevelsResponse = await this.getUserLevels();
+      if (userLevelsResponse.success && userLevelsResponse.data) {
+        const validLevel = userLevelsResponse.data.find(level => level.id === data.user_level_id);
+        if (!validLevel) {
+          throw new Error(`Invalid user level: ${data.user_level_id}`);
+        }
+      }
+
+      // Validate password confirmation
+      if (data.password !== data.confirm_password) {
+        throw new Error('Password confirmation does not match');
+      }
+
       // Map frontend data to backend format
       const backendData = {
         username: data.username,
@@ -172,7 +162,9 @@ export const userService = {
         email: data.email || undefined,
         phone: data.phone || undefined,
         user_level_id: data.user_level_id,
-        department: data.department || undefined
+        department: data.department || undefined,
+        is_active: data.is_active !== undefined ? data.is_active : true,
+        notes: data.notes || undefined
       };
 
       const response = await api.post('/users', backendData);
@@ -186,6 +178,17 @@ export const userService = {
   // Update user
   async updateUser(id: string, data: UpdateUserRequest): Promise<ApiResponse<User>> {
     try {
+      // Validate user level if provided
+      if (data.user_level_id) {
+        const userLevelsResponse = await this.getUserLevels();
+        if (userLevelsResponse.success && userLevelsResponse.data) {
+          const validLevel = userLevelsResponse.data.find(level => level.id === data.user_level_id);
+          if (!validLevel) {
+            throw new Error(`Invalid user level: ${data.user_level_id}`);
+          }
+        }
+      }
+
       const response = await api.put(`/users/${id}`, data);
       return response.data;
     } catch (error: any) {
@@ -205,7 +208,7 @@ export const userService = {
     }
   },
 
-  // Toggle user active status (custom implementation using update)
+  // Toggle user active status
   async toggleUserStatus(id: string): Promise<ApiResponse<User>> {
     try {
       // First get the current user to know current status
@@ -229,14 +232,14 @@ export const userService = {
     }
   },
 
-  // Change user password (custom implementation)
+  // Change user password
   async changePassword(
     id: string, 
     currentPassword: string, 
     newPassword: string
   ): Promise<ApiResponse<null>> {
     try {
-      // Since backend doesn't have separate endpoint, use update with password
+      // In a real app, you'd verify current password first
       const response = await api.put(`/users/${id}`, {
         password: newPassword
       });
@@ -251,7 +254,7 @@ export const userService = {
     }
   },
 
-  // Get user statistics (mock implementation)
+  // Get user statistics
   async getUserStats(): Promise<ApiResponse<{
     total: number;
     active: number;
@@ -282,10 +285,20 @@ export const userService = {
           }).length
         };
         
+        // Get user levels for proper counting
+        const userLevelsResponse = await this.getUserLevels();
+        const userLevelsMap = new Map<string, string>();
+        
+        if (userLevelsResponse.success && userLevelsResponse.data) {
+          userLevelsResponse.data.forEach(level => {
+            userLevelsMap.set(level.id, level.level_name);
+          });
+        }
+        
         // Count by level
         users.forEach((user: User) => {
-          const level = user.UserLevel?.name || user.user_level_id;
-          stats.byLevel[level] = (stats.byLevel[level] || 0) + 1;
+          const levelName = userLevelsMap.get(user.user_level_id) || user.user_level_id;
+          stats.byLevel[levelName] = (stats.byLevel[levelName] || 0) + 1;
         });
         
         // Count by department

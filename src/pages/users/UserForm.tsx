@@ -1,4 +1,3 @@
-// src/pages/users/UserForm.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
@@ -14,7 +13,8 @@ import {
   EyeOff,
   Upload,
   X,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { useUserStore } from '../../store/useUserStore';
 import { CreateUserRequest, UpdateUserRequest } from '../../types/user.types';
@@ -41,6 +41,8 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
   } = useUserStore();
 
   const [showPassword, setShowPassword] = useState(false);
+  const [userLevelsLoaded, setUserLevelsLoaded] = useState(false);
+  const [formInitialized, setFormInitialized] = useState(false);
   
   const [formData, setFormData] = useState<Partial<CreateUserRequest & UpdateUserRequest>>({
     username: '',
@@ -54,48 +56,72 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
   });
 
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    // Fetch user levels when component mounts
-    if (userLevels.length === 0) {
-      fetchUserLevels();
-    }
-  }, [fetchUserLevels, userLevels.length]);
+  // Debug state
+  const [debugInfo, setDebugInfo] = useState<any>({});
 
+  // Load user levels first
   useEffect(() => {
-    if (mode === 'edit' && id) {
-      console.log('Edit mode - Loading user with ID:', id);
-      loadUser();
-    } else if (mode === 'create') {
-      console.log('Create mode - Setting default form data');
-      // Clear any previous user data
-      clearCurrentUser();
-      // Set default values for new user
-      setFormData({
-        username: '',
-        full_name: '',
-        email: '',
-        phone: '',
-        user_level_id: 'staff', // Default to staff level
-        department: '',
-        is_active: true,
-        notes: ''
-      });
-    }
-
-    return () => {
-      if (mode === 'create') {
-        clearCurrentUser();
+    const loadUserLevels = async () => {
+      try {
+        console.log('🔄 Loading user levels...');
+        await fetchUserLevels();
+        setUserLevelsLoaded(true);
+        console.log('✅ User levels loaded:', userLevels);
+      } catch (error) {
+        console.error('❌ Failed to load user levels:', error);
       }
-      clearError();
     };
-  }, [mode, id, getUserById, clearCurrentUser, clearError]);
 
+    loadUserLevels();
+  }, [fetchUserLevels]);
+
+  // Initialize form after user levels are loaded
   useEffect(() => {
-    // Populate form when currentUser is loaded
-    if (currentUser && mode === 'edit') {
-      console.log('Populating form with user data:', currentUser);
+    if (userLevelsLoaded && userLevels.length > 0 && !formInitialized) {
+      console.log('🚀 Initializing form with user levels:', userLevels);
+      
+      if (mode === 'create') {
+        // Use the first available user level as default
+        const defaultLevel = userLevels.find(level => 
+          level.id === 'staff' || level.level_name.toLowerCase().includes('staff')
+        ) || userLevels[0];
+        
+        console.log('📝 Setting default user level:', defaultLevel);
+        
+        setFormData({
+          username: '',
+          full_name: '',
+          email: '',
+          phone: '',
+          user_level_id: defaultLevel.id,
+          department: '',
+          is_active: true,
+          notes: ''
+        });
+        
+        clearCurrentUser();
+        setFormInitialized(true);
+      } else if (mode === 'edit' && id) {
+        console.log('📝 Edit mode - Loading user with ID:', id);
+        loadUser();
+      }
+    }
+  }, [userLevelsLoaded, userLevels, mode, id, formInitialized]);
+
+  // Update form when currentUser is loaded (edit mode)
+  useEffect(() => {
+    if (currentUser && mode === 'edit' && userLevelsLoaded) {
+      console.log('📝 Populating form with user data:', currentUser);
+      
+      // Verify user level exists in available levels
+      const userLevelExists = userLevels.find(level => level.id === currentUser.user_level_id);
+      if (!userLevelExists) {
+        console.warn('⚠️ User level not found in available levels:', currentUser.user_level_id);
+      }
+      
       setFormData({
         username: currentUser.username,
         full_name: currentUser.full_name,
@@ -106,28 +132,44 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
         is_active: currentUser.is_active,
         notes: currentUser.notes || ''
       });
+      
+      setFormInitialized(true);
     }
-  }, [currentUser, mode]);
+  }, [currentUser, mode, userLevelsLoaded, userLevels]);
+
+  // Update debug info
+  useEffect(() => {
+    setDebugInfo({
+      mode,
+      id,
+      userLevelsLoaded,
+      userLevelsCount: userLevels.length,
+      availableUserLevels: userLevels.map(level => ({ id: level.id, level_name: level.level_name })),
+      selectedUserLevelId: formData.user_level_id,
+      selectedUserLevelExists: userLevels.find(level => level.id === formData.user_level_id),
+      formInitialized,
+      currentUser: currentUser ? { id: currentUser.id, username: currentUser.username } : null,
+      isLoading,
+      error
+    });
+  }, [mode, id, userLevelsLoaded, userLevels, formData.user_level_id, formInitialized, currentUser, isLoading, error]);
 
   const loadUser = async () => {
     if (!id) {
-      console.error('No ID provided for loading user');
+      console.error('❌ No ID provided for loading user');
       return;
     }
     
-    console.log('Loading user with ID:', id);
+    console.log('🔄 Loading user with ID:', id);
     try {
       const user = await getUserById(id);
-      console.log('User loaded successfully:', user);
+      console.log('✅ User loaded successfully:', user);
       if (!user) {
-        console.error('User not found with ID:', id);
-        // Redirect to users list if user not found
+        console.error('❌ User not found with ID:', id);
         navigate('/users');
       }
     } catch (error) {
-      console.error('Failed to load user:', error);
-      // Optionally redirect on error
-      // navigate('/users');
+      console.error('❌ Failed to load user:', error);
     }
   };
 
@@ -146,6 +188,10 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
       errors.password = 'Password must be at least 6 characters';
     }
 
+    if (mode === 'create' && password !== confirmPassword) {
+      errors.confirmPassword = 'Password confirmation does not match';
+    }
+
     if (!formData.full_name?.trim()) {
       errors.full_name = 'Full name is required';
     }
@@ -156,6 +202,12 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
 
     if (!formData.user_level_id) {
       errors.user_level_id = 'User level is required';
+    } else {
+      // Check if selected user level exists
+      const levelExists = userLevels.find(level => level.id === formData.user_level_id);
+      if (!levelExists) {
+        errors.user_level_id = `Selected user level "${formData.user_level_id}" does not exist`;
+      }
     }
 
     setValidationErrors(errors);
@@ -174,7 +226,13 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm()) return;
+    console.log('🚀 Form submission started');
+    console.log('📝 Form data:', formData);
+    
+    if (!validateForm()) {
+      console.log('❌ Form validation failed:', validationErrors);
+      return;
+    }
 
     try {
       let success = false;
@@ -183,17 +241,24 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
         const createData: CreateUserRequest = {
           username: formData.username!,
           password: password,
+          confirm_password: confirmPassword,
           full_name: formData.full_name!,
           email: formData.email || undefined,
           phone: formData.phone || undefined,
           user_level_id: formData.user_level_id!,
-          department: formData.department || undefined
+          department: formData.department || undefined,
+          is_active: formData.is_active,
+          notes: formData.notes || undefined
         };
         
+        console.log('📤 Creating user with data:', createData);
         success = await createUser(createData);
         
         if (success) {
+          console.log('✅ User created successfully');
           navigate('/users');
+        } else {
+          console.log('❌ User creation failed');
         }
       } else if (mode === 'edit' && id) {
         const updateData: UpdateUserRequest = {
@@ -207,30 +272,64 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
           notes: formData.notes || undefined
         };
         
+        console.log('📤 Updating user with data:', updateData);
         success = await updateUser(id, updateData);
         
         if (success) {
+          console.log('✅ User updated successfully');
           navigate(`/users/${id}`);
+        } else {
+          console.log('❌ User update failed');
         }
       }
     } catch (error) {
-      console.error('Failed to save user:', error);
+      console.error('❌ Failed to save user:', error);
     }
   };
 
-  if (isLoading && mode === 'edit') {
+  if (isLoading && (mode === 'edit' || !userLevelsLoaded)) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 dark:border-blue-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading user data...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            {mode === 'edit' ? 'Loading user data...' : 'Loading user levels...'}
+          </p>
         </div>
       </div>
     );
   }
 
-  // Debug info (remove in production)
-  console.log('UserForm render:', { mode, id, currentUser, formData, isLoading, error });
+  if (!userLevelsLoaded || userLevels.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+            User Levels Required
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            No user levels are available. Please create user levels first before adding users.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => fetchUserLevels()}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry Loading
+            </button>
+            <button
+              onClick={() => navigate('/users')}
+              className="block w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
@@ -259,7 +358,8 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <form onSubmit={handleSubmit}>
+      
+        <div onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main Form */}
             <div className="lg:col-span-2">
@@ -290,37 +390,62 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                     </div>
 
                     {mode === 'create' && (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Password *
-                        </label>
-                        <div className="relative">
+                      <>
+                        <div className="md:col-span-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Password *
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              value={password}
+                              onChange={(e) => {
+                                setPassword(e.target.value);
+                                if (validationErrors.password) {
+                                  setValidationErrors(prev => ({ ...prev, password: '' }));
+                                }
+                              }}
+                              placeholder="Enter password"
+                              className={`w-full px-3 py-2 pr-10 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
+                                validationErrors.password ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                          {validationErrors.password && (
+                            <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.password}</p>
+                          )}
+                        </div>
+
+                        <div className="md:col-span-1">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Confirm Password *
+                          </label>
                           <input
-                            type={showPassword ? 'text' : 'password'}
-                            value={password}
+                            type="password"
+                            value={confirmPassword}
                             onChange={(e) => {
-                              setPassword(e.target.value);
-                              if (validationErrors.password) {
-                                setValidationErrors(prev => ({ ...prev, password: '' }));
+                              setConfirmPassword(e.target.value);
+                              if (validationErrors.confirmPassword) {
+                                setValidationErrors(prev => ({ ...prev, confirmPassword: '' }));
                               }
                             }}
-                            placeholder="Enter password"
-                            className={`w-full px-3 py-2 pr-10 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
-                              validationErrors.password ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                            placeholder="Confirm password"
+                            className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
+                              validationErrors.confirmPassword ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                             }`}
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
-                          >
-                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
+                          {validationErrors.confirmPassword && (
+                            <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.confirmPassword}</p>
+                          )}
                         </div>
-                        {validationErrors.password && (
-                          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.password}</p>
-                        )}
-                      </div>
+                      </>
                     )}
 
                     <div className="md:col-span-2">
@@ -388,12 +513,15 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                       >
                         <option value="">Select user level</option>
                         {userLevels.map(level => (
-                          <option key={level.id} value={level.id}>{level.name}</option>
+                          <option key={level.id} value={level.id}>
+                            {level.level_name} 
+                          </option>
                         ))}
                       </select>
                       {validationErrors.user_level_id && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.user_level_id}</p>
                       )}
+                  
                     </div>
 
                     <div>
@@ -454,8 +582,8 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
 
                   <div className="mt-6 space-y-3">
                     <button
-                      type="submit"
-                      disabled={isLoading}
+                      onClick={handleSubmit}
+                      disabled={isLoading || !formInitialized}
                       className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                     >
                       <Save className="h-4 w-4 mr-2" />
@@ -463,7 +591,6 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                     </button>
 
                     <button
-                      type="button"
                       onClick={() => navigate('/users')}
                       className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
                     >
@@ -485,7 +612,6 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                       </div>
                       <div className="mt-4">
                         <button
-                          type="button"
                           onClick={clearError}
                           className="text-sm font-medium text-red-800 dark:text-red-300 hover:text-red-900 dark:hover:text-red-200 transition-colors duration-200"
                         >
@@ -498,7 +624,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
               )}
             </div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 export interface UserLevel {
   id: string;
-  name: string;
+  level_name: string;  // Changed from 'name' to match backend
   description?: string;
   permissions?: string[];
   created_at: string;
