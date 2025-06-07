@@ -23,11 +23,11 @@ const Supplier = lazy(() => import('./pages/suppliers/SuppliersList'));
 const SupplierDetail = lazy(() => import('./pages/suppliers/SupplierDetail'));
 const SupplierForm = lazy(() => import('./pages/suppliers/SupplierForm'));
 
-// Scanner/Transactions
-const Scanner = lazy(() => import('./pages/transactions/TransactionsList'));
-const ScannerDetail = lazy(() => import('./pages/transactions/TransactionDetail'));
-const ScannerForm = lazy(() => import('./pages/transactions/TransactionForm'));
-const ScannerR = lazy(() => import('./pages/transactions/Scanner'));
+// Transactions - FIXED IMPORTS
+const TransactionsList = lazy(() => import('./pages/transactions/TransactionsList'));
+const TransactionDetail = lazy(() => import('./pages/transactions/TransactionDetail'));
+const TransactionForm = lazy(() => import('./pages/transactions/TransactionForm'));
+const Scanner = lazy(() => import('./pages/transactions/Scanner'));
 
 // Product
 const ProductsList = lazy(() => import('./pages/products/ProductsList'));
@@ -46,8 +46,9 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Loading fallback component
 const LoadingFallback = () => (
-  <div className="flex items-center justify-center min-h-screen bg-gray-100">
-    <div className="w-16 h-16 border-t-4 border-b-4 border-indigo-500 rounded-full animate-spin"></div>
+  <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors duration-200">
+    <div className="w-16 h-16 border-t-4 border-b-4 border-indigo-500 dark:border-indigo-400 rounded-full animate-spin"></div>
+    <p className="ml-4 text-gray-600 dark:text-gray-400">Loading...</p>
   </div>
 );
 
@@ -127,12 +128,14 @@ const AppRoutes: React.FC = () => {
           <Route path="suppliers/:id" element={<SupplierDetail />} />
           <Route path="suppliers/edit/:id" element={<SupplierForm />} />
 
-          {/* Transactions */}
-          <Route path="transactions" element={<Scanner />} />
-          <Route path="transactions/new" element={<ScannerForm />} />
-          <Route path="scanner" element={<ScannerR />} />
-          <Route path="transactions/:id" element={<ScannerDetail />} />
-          <Route path="transactions/edit/:id" element={<SupplierForm />} />
+          {/* Transactions - FIXED ROUTES */}
+          <Route path="transactions" element={<TransactionsList />} />
+          <Route path="transactions/new" element={<TransactionForm mode="create" />} />
+          <Route path="transactions/:id" element={<TransactionDetail />} />
+          <Route path="transactions/edit/:id" element={<TransactionForm mode="edit" />} />
+          
+          {/* Scanner - SEPARATE ROUTE */}
+          <Route path="scanner" element={<Scanner />} />
 
           {/* Products */}
           <Route path="products" element={<ProductsList />} />

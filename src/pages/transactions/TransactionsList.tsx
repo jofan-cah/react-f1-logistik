@@ -1,4 +1,3 @@
-// src/pages/transactions/TransactionsList.tsx
 
 import React, { useState, useEffect } from 'react';
 import { 
@@ -14,197 +13,140 @@ import {
   Hash,
   Download,
   RefreshCw,
-  ScanLine
+  ScanLine,
+  CheckCircle,
+  XCircle,
+  Clock
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Transaction, TransactionQueryParams } from '../../types/transaction.types';
-
-// Mock data - replace with actual API calls
-const mockTransactions: Transaction[] = [
-  {
-    id: 1,
-    transaction_type: 'check_out',
-    reference_no: 'TXN-OUT-20241201-001',
-    first_person: 'John Doe',
-    second_person: 'Jane Smith',
-    location: 'Office Building A',
-    transaction_date: '2024-12-01T10:30:00Z',
-    notes: 'Equipment checkout for project meeting',
-    status: 'open',
-    created_by: 'admin',
-    created_at: '2024-12-01T10:30:00Z',
-    items: [
-      {
-        id: 1,
-        product_id: 'PROJ-001',
-        quantity: 1,
-        condition_before: 'excellent',
-        condition_after: '',
-        status: 'processed',
-        notes: 'Projector for presentation'
-      },
-      {
-        id: 2,
-        product_id: 'LAP-002',
-        quantity: 1,
-        condition_before: 'good',
-        condition_after: '',
-        status: 'processed',
-        notes: 'Laptop for demo'
-      }
-    ]
-  },
-  {
-    id: 2,
-    transaction_type: 'check_in',
-    reference_no: 'TXN-IN-20241201-002',
-    first_person: 'Alice Johnson',
-    location: 'Warehouse',
-    transaction_date: '2024-12-01T14:15:00Z',
-    notes: 'Return after maintenance',
-    status: 'closed',
-    created_by: 'admin',
-    created_at: '2024-12-01T14:15:00Z',
-    items: [
-      {
-        id: 3,
-        product_id: 'DRILL-005',
-        quantity: 1,
-        condition_before: 'fair',
-        condition_after: 'excellent',
-        status: 'returned',
-        notes: 'Maintenance completed'
-      }
-    ]
-  },
-  {
-    id: 3,
-    transaction_type: 'maintenance',
-    reference_no: 'TXN-MAINT-20241130-003',
-    first_person: 'Bob Wilson',
-    location: 'Maintenance Shop',
-    transaction_date: '2024-11-30T09:00:00Z',
-    notes: 'Scheduled maintenance check',
-    status: 'pending',
-    created_by: 'admin',
-    created_at: '2024-11-30T09:00:00Z',
-    items: [
-      {
-        id: 4,
-        product_id: 'GEN-010',
-        quantity: 1,
-        condition_before: 'good',
-        condition_after: '',
-        status: 'pending',
-        notes: 'Generator scheduled for maintenance'
-      }
-    ]
-  }
-];
-
-const TRANSACTION_TYPE_LABELS: Record<Transaction['transaction_type'], string> = {
-  check_out: 'Check Out',
-  check_in: 'Check In',
-  maintenance: 'Maintenance',
-  lost: 'Lost',
-  repair: 'Repair',
-  return: 'Return'
-};
-
-const TRANSACTION_STATUS_LABELS: Record<Transaction['status'], string> = {
-  open: 'Open',
-  closed: 'Closed',
-  pending: 'Pending'
-};
+import { useTransactionStore } from '../../store/useTransactionStore';
+import { 
+  Transaction, 
+  TRANSACTION_TYPE_LABELS, 
+  TRANSACTION_STATUS_LABELS 
+} from '../../types/transaction.types';
 
 const TransactionsList: React.FC = () => {
   const navigate = useNavigate();
-  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions);
-  const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState<TransactionQueryParams>({
-    page: 1,
-    limit: 10,
-    sort_by: 'created_at',
-    sort_order: 'DESC'
-  });
+  
+  const {
+    transactions,
+    isLoading,
+    error,
+    currentPage,
+    totalPages,
+    totalItems,
+    itemsPerPage,
+    filters,
+    searchTerm,
+    
+    // Actions
+    fetchTransactions,
+    deleteTransaction,
+    closeTransaction,
+    reopenTransaction,
+    setFilters,
+    clearFilters,
+    setCurrentPage,
+    setItemsPerPage,
+    searchTransactions,
+    clearSearch,
+    clearError,
+    refreshTransactions
+  } = useTransactionStore();
+
+  const [localSearchTerm, setLocalSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [statusChangeLoading, setStatusChangeLoading] = useState<number | null>(null);
 
+  // Load transactions on component mount and when filters change
   useEffect(() => {
     loadTransactions();
+  }, []);
+
+  useEffect(() => {
+    if (Object.keys(filters).length > 0) {
+      loadTransactions();
+    }
   }, [filters]);
 
   const loadTransactions = async () => {
-    setLoading(true);
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      let filteredTransactions = [...mockTransactions];
-      
-      // Apply search filter
-      if (searchTerm) {
-        filteredTransactions = filteredTransactions.filter(
-          t => 
-            t.reference_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.first_person.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.location.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-      }
-      
-      // Apply filters
-      if (filters.transaction_type) {
-        filteredTransactions = filteredTransactions.filter(
-          t => t.transaction_type === filters.transaction_type
-        );
-      }
-      
-      if (filters.status) {
-        filteredTransactions = filteredTransactions.filter(
-          t => t.status === filters.status
-        );
-      }
-      
-      if (filters.date_from) {
-        filteredTransactions = filteredTransactions.filter(
-          t => new Date(t.transaction_date) >= new Date(filters.date_from!)
-        );
-      }
-      
-      if (filters.date_to) {
-        filteredTransactions = filteredTransactions.filter(
-          t => new Date(t.transaction_date) <= new Date(filters.date_to!)
-        );
-      }
-      
-      setTransactions(filteredTransactions);
-    } catch (error) {
-      console.error('Failed to load transactions:', error);
-    } finally {
-      setLoading(false);
+    console.log('🔄 Loading transactions...');
+    await fetchTransactions();
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (localSearchTerm.trim()) {
+      console.log('🔍 Searching for:', localSearchTerm);
+      setFilters({ ...filters, search: localSearchTerm });
+    } else {
+      const newFilters = { ...filters };
+      delete newFilters.search;
+      setFilters(newFilters);
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFilters(prev => ({ ...prev, page: 1 }));
-    loadTransactions();
-  };
-
-  const handleFilterChange = (key: keyof TransactionQueryParams, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value, page: 1 }));
+  const handleFilterChange = (key: string, value: any) => {
+    console.log('🔧 Changing filter:', key, '=', value);
+    
+    const newFilters = { ...filters };
+    
+    if (value === '' || value === undefined || value === null) {
+      delete newFilters[key as keyof typeof newFilters];
+    } else {
+      (newFilters as any)[key] = value;
+    }
+    
+    setFilters(newFilters);
+    setCurrentPage(1); // Reset to first page
   };
 
   const handleDelete = async (id: number) => {
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setTransactions(prev => prev.filter(t => t.id !== id));
+    console.log('🗑️ Deleting transaction:', id);
+    
+    const success = await deleteTransaction(id);
+    if (success) {
       setDeleteConfirm(null);
-    } catch (error) {
-      console.error('Failed to delete transaction:', error);
     }
+  };
+
+  const handleStatusChange = async (id: number, newStatus: 'open' | 'closed') => {
+    console.log('🔄 Changing status for transaction:', id, 'to', newStatus);
+    
+    setStatusChangeLoading(id);
+    
+    try {
+      let success = false;
+      
+      if (newStatus === 'closed') {
+        success = await closeTransaction(id);
+      } else {
+        success = await reopenTransaction(id);
+      }
+      
+      if (success) {
+        console.log('✅ Status changed successfully');
+      }
+    } catch (error) {
+      console.error('❌ Failed to change status:', error);
+    } finally {
+      setStatusChangeLoading(null);
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    console.log('📄 Changing page to:', page);
+    setCurrentPage(page);
+    fetchTransactions();
+  };
+
+  const handleItemsPerPageChange = (limit: number) => {
+    console.log('📋 Changing items per page to:', limit);
+    setItemsPerPage(limit);
+    fetchTransactions();
   };
 
   const getStatusBadgeColor = (status: Transaction['status']) => {
@@ -279,18 +221,36 @@ const TransactionsList: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <XCircle className="h-5 w-5 text-red-400 dark:text-red-500 mr-2" />
+                <span className="text-red-800 dark:text-red-300">{error}</span>
+              </div>
+              <button
+                onClick={clearError}
+                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Search and Filters */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow mb-6 border border-gray-200 dark:border-gray-700">
           <div className="p-6">
-            <form onSubmit={handleSearch} className="flex flex-col md:flex-row gap-4">
+            <div onSubmit={handleSearch} className="flex flex-col md:flex-row gap-4">
               <div className="flex-1">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 h-5 w-5" />
                   <input
                     type="text"
                     placeholder="Search transactions..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    value={localSearchTerm}
+                    onChange={(e) => setLocalSearchTerm(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
                   />
                 </div>
@@ -298,7 +258,6 @@ const TransactionsList: React.FC = () => {
               
               <div className="flex gap-2">
                 <button
-                  type="button"
                   onClick={() => setShowFilters(!showFilters)}
                   className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
                 >
@@ -307,21 +266,21 @@ const TransactionsList: React.FC = () => {
                 </button>
                 
                 <button
-                  type="submit"
+                  onClick={handleSearch}
                   className="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors duration-200"
                 >
                   Search
                 </button>
                 
                 <button
-                  type="button"
-                  onClick={loadTransactions}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
+                  onClick={refreshTransactions}
+                  disabled={isLoading}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
-            </form>
+            </div>
 
             {/* Advanced Filters */}
             {showFilters && (
@@ -368,8 +327,8 @@ const TransactionsList: React.FC = () => {
                     </label>
                     <input
                       type="date"
-                      value={filters.date_from || ''}
-                      onChange={(e) => handleFilterChange('date_from', e.target.value || undefined)}
+                      value={filters.start_date || ''}
+                      onChange={(e) => handleFilterChange('start_date', e.target.value || undefined)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
                     />
                   </div>
@@ -380,11 +339,20 @@ const TransactionsList: React.FC = () => {
                     </label>
                     <input
                       type="date"
-                      value={filters.date_to || ''}
-                      onChange={(e) => handleFilterChange('date_to', e.target.value || undefined)}
+                      value={filters.end_date || ''}
+                      onChange={(e) => handleFilterChange('end_date', e.target.value || undefined)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
                     />
                   </div>
+                </div>
+                
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={clearFilters}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
+                  >
+                    Clear Filters
+                  </button>
                 </div>
               </div>
             )}
@@ -396,7 +364,7 @@ const TransactionsList: React.FC = () => {
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                Transactions ({transactions.length})
+                Transactions ({totalItems})
               </h2>
               
               <button
@@ -409,7 +377,7 @@ const TransactionsList: React.FC = () => {
             </div>
           </div>
 
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="h-8 w-8 animate-spin text-blue-500 dark:text-blue-400" />
             </div>
@@ -503,19 +471,52 @@ const TransactionsList: React.FC = () => {
                         <div className="flex items-center space-x-1">
                           <Calendar className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                           <span className="text-sm text-gray-900 dark:text-white">
-                            {formatDate(transaction.transaction_date)}
+                            {formatDate(transaction.transaction_date || transaction.created_at || '')}
                           </span>
                         </div>
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeColor(transaction.status)}`}>
-                          {TRANSACTION_STATUS_LABELS[transaction.status]}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeColor(transaction.status)}`}>
+                            {TRANSACTION_STATUS_LABELS[transaction.status]}
+                          </span>
+                          
+                          {/* Status toggle buttons */}
+                          {transaction.status === 'open' && (
+                            <button
+                              onClick={() => handleStatusChange(transaction.id!, 'closed')}
+                              disabled={statusChangeLoading === transaction.id}
+                              className="text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 disabled:opacity-50"
+                              title="Close Transaction"
+                            >
+                              {statusChangeLoading === transaction.id ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CheckCircle className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+                          
+                          {transaction.status === 'closed' && (
+                            <button
+                              onClick={() => handleStatusChange(transaction.id!, 'open')}
+                              disabled={statusChangeLoading === transaction.id}
+                              className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:opacity-50"
+                              title="Reopen Transaction"
+                            >
+                              {statusChangeLoading === transaction.id ? (
+                                <RefreshCw className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Clock className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {transaction.items?.length || 0} items
+                        {transaction.items?.length || transaction.TransactionItems?.length || 0} items
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -527,9 +528,8 @@ const TransactionsList: React.FC = () => {
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          
                           <button
-                            onClick={() => navigate(`/transactions/${transaction.id}/edit`)}
+                            onClick={() => navigate(`/transactions/edit/${transaction.id}`)}
                             className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-900 dark:hover:text-yellow-300 transition-colors duration-200"
                             title="Edit"
                           >
@@ -553,104 +553,100 @@ const TransactionsList: React.FC = () => {
           )}
         </div>
 
-        {/* Pagination would go here */}
-          {/* Pagination */}
-        <div className="bg-white dark:bg-gray-800 px-4 py-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 sm:px-6 rounded-lg shadow mt-6 border border-gray-200 dark:border-gray-700">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button
-              onClick={() => handleFilterChange('page', Math.max(1, (filters.page || 1) - 1))}
-              disabled={filters.page === 1}
-              className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => handleFilterChange('page', (filters.page || 1) + 1)}
-              disabled={transactions.length < (filters.limit || 10)}
-              className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-            >
-              Next
-            </button>
-          </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700 dark:text-gray-300">
-                Showing{' '}
-                <span className="font-medium">
-                  {((filters.page || 1) - 1) * (filters.limit || 10) + 1}
-                </span>{' '}
-                to{' '}
-                <span className="font-medium">
-                  {Math.min((filters.page || 1) * (filters.limit || 10), transactions.length)}
-                </span>{' '}
-                of{' '}
-                <span className="font-medium">{transactions.length}</span> results
-              </p>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="bg-white dark:bg-gray-800 px-4 py-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 sm:px-6 rounded-lg shadow mt-6 border border-gray-200 dark:border-gray-700">
+            <div className="flex-1 flex justify-between sm:hidden">
+              <button
+                onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1 || isLoading}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages || isLoading}
+                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+              >
+                Next
+              </button>
             </div>
-            <div>
-              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                {/* Previous Button */}
-                <button
-                  onClick={() => handleFilterChange('page', Math.max(1, (filters.page || 1) - 1))}
-                  disabled={filters.page === 1}
-                  className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                >
-                  <span className="sr-only">Previous</span>
-                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                </button>
+            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  Showing{' '}
+                  <span className="font-medium">
+                    {(currentPage - 1) * itemsPerPage + 1}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-medium">
+                    {Math.min(currentPage * itemsPerPage, totalItems)}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-medium">{totalItems}</span> results
+                </p>
+              </div>
+              <div>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  {/* Previous Button */}
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1 || isLoading}
+                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </button>
 
-                {/* Page Numbers */}
-                {Array.from({ length: Math.min(5, Math.ceil(mockTransactions.length / (filters.limit || 10))) }, (_, i) => {
-                  const pageNumber = i + 1;
-                  const isCurrentPage = pageNumber === (filters.page || 1);
-                  
-                  return (
-                    <button
-                      key={pageNumber}
-                      onClick={() => handleFilterChange('page', pageNumber)}
-                      className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-colors duration-200 ${
-                        isCurrentPage
-                          ? 'z-10 bg-blue-50 dark:bg-blue-900/30 border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400'
-                          : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {pageNumber}
-                    </button>
-                  );
-                })}
+                  {/* Page Numbers */}
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNumber;
+                    if (totalPages <= 5) {
+                      pageNumber = i + 1;
+                    } else {
+                      const start = Math.max(1, currentPage - 2);
+                      const end = Math.min(totalPages, start + 4);
+                      pageNumber = start + i;
+                      if (pageNumber > end) return null;
+                    }
+                    
+                    const isCurrentPage = pageNumber === currentPage;
+                    
+                    return (
+                      <button
+                        key={pageNumber}
+                        onClick={() => handlePageChange(pageNumber)}
+                        disabled={isLoading}
+                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-colors duration-200 disabled:opacity-50 ${
+                          isCurrentPage
+                            ? 'z-10 bg-blue-50 dark:bg-blue-900/30 border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400'
+                            : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    );
+                  })}
 
-                {/* Show ellipsis if there are more pages */}
-                {Math.ceil(mockTransactions.length / (filters.limit || 10)) > 5 && (
-                  <>
-                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300">
-                      ...
-                    </span>
-                    <button
-                      onClick={() => handleFilterChange('page', Math.ceil(mockTransactions.length / (filters.limit || 10)))}
-                      className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
-                    >
-                      {Math.ceil(mockTransactions.length / (filters.limit || 10))}
-                    </button>
-                  </>
-                )}
-
-                {/* Next Button */}
-                <button
-                  onClick={() => handleFilterChange('page', (filters.page || 1) + 1)}
-                  disabled={transactions.length < (filters.limit || 10)}
-                  className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                >
-                  <span className="sr-only">Next</span>
-                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </nav>
+                  {/* Next Button */}
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= totalPages || isLoading}
+                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                  >
+                    <span className="sr-only">Next</span>
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Items Per Page Selector */}
         <div className="bg-white dark:bg-gray-800 px-4 py-3 flex items-center justify-between border border-gray-200 dark:border-gray-700 sm:px-6 rounded-lg shadow mt-4">
@@ -659,9 +655,10 @@ const TransactionsList: React.FC = () => {
               Items per page:
             </label>
             <select
-              value={filters.limit || 10}
-              onChange={(e) => handleFilterChange('limit', parseInt(e.target.value))}
-              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+              value={itemsPerPage}
+              onChange={(e) => handleItemsPerPageChange(parseInt(e.target.value))}
+              disabled={isLoading}
+              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 disabled:opacity-50"
             >
               <option value={5}>5</option>
               <option value={10}>10</option>
@@ -670,36 +667,8 @@ const TransactionsList: React.FC = () => {
               <option value={100}>100</option>
             </select>
           </div>
-          
-          <div className="flex items-center space-x-4">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Sort by:
-            </label>
-            <select
-              value={filters.sort_by || 'created_at'}
-              onChange={(e) => handleFilterChange('sort_by', e.target.value)}
-              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
-            >
-              <option value="created_at">Date Created</option>
-              <option value="transaction_date">Transaction Date</option>
-              <option value="reference_no">Reference Number</option>
-              <option value="first_person">Person Name</option>
-              <option value="status">Status</option>
-            </select>
-            
-            <select
-              value={filters.sort_order || 'DESC'}
-              onChange={(e) => handleFilterChange('sort_order', e.target.value as 'ASC' | 'DESC')}
-              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
-            >
-              <option value="DESC">Descending</option>
-              <option value="ASC">Ascending</option>
-            </select>
-          </div>
         </div>
       </div>
-
-
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
@@ -724,9 +693,10 @@ const TransactionsList: React.FC = () => {
                 </button>
                 <button
                   onClick={() => handleDelete(deleteConfirm)}
-                  className="px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-md hover:bg-red-700 dark:hover:bg-red-600 transition-colors duration-200"
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-md hover:bg-red-700 dark:hover:bg-red-600 disabled:opacity-50 transition-colors duration-200"
                 >
-                  Delete
+                  {isLoading ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
             </div>

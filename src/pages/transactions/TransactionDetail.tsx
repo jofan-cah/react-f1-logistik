@@ -1,4 +1,3 @@
-// src/pages/transactions/TransactionDetail.tsx
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -18,68 +17,17 @@ import {
   MoreVertical,
   Download,
   Printer,
-  QrCode
+  QrCode,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
-
-// Types
-interface Transaction {
-  id?: number;
-  transaction_type: 'check_out' | 'check_in' | 'maintenance' | 'lost' | 'repair' | 'return';
-  reference_no?: string;
-  first_person: string;
-  second_person?: string;
-  location: string;
-  transaction_date: string;
-  notes?: string;
-  status: 'open' | 'closed' | 'pending';
-  created_by?: string;
-  created_at?: string;
-  items?: TransactionItem[];
-}
-
-interface TransactionItem {
-  id?: number;
-  product_id: string;
-  product?: Product;
-  quantity: number;
-  condition_before?: string;
-  condition_after?: string;
-  status: 'processed' | 'pending' | 'returned' | 'lost';
-  notes?: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  description?: string;
-  serial_number?: string;
-  barcode?: string;
-  qr_data?: string;
-  status?: string;
-}
-
-// Constants
-const TRANSACTION_TYPE_LABELS: Record<Transaction['transaction_type'], string> = {
-  check_out: 'Check Out',
-  check_in: 'Check In',
-  maintenance: 'Maintenance',
-  lost: 'Lost',
-  repair: 'Repair',
-  return: 'Return'
-};
-
-const TRANSACTION_STATUS_LABELS: Record<Transaction['status'], string> = {
-  open: 'Open',
-  closed: 'Closed',
-  pending: 'Pending'
-};
-
-const ITEM_STATUS_LABELS: Record<TransactionItem['status'], string> = {
-  processed: 'Processed',
-  pending: 'Pending',
-  returned: 'Returned',
-  lost: 'Lost'
-};
+import { useTransactionStore } from '../../store/useTransactionStore';
+import {
+  Transaction,
+  TransactionItem,
+  TRANSACTION_TYPE_LABELS,
+  TRANSACTION_STATUS_LABELS
+} from '../../types/transaction.types';
 
 // QR Code Generator Component
 const QRCodeGenerator: React.FC<{ 
@@ -162,10 +110,10 @@ const QRCodeGenerator: React.FC<{
   if (!qrCodeUrl) {
     return (
       <div 
-        className="flex items-center justify-center bg-gray-100 rounded-lg"
+        className="flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg"
         style={{ width: size, height: size }}
       >
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-500 dark:text-blue-400" />
       </div>
     );
   }
@@ -175,20 +123,20 @@ const QRCodeGenerator: React.FC<{
       <img 
         src={qrCodeUrl} 
         alt="Transaction QR Code" 
-        className="border border-gray-200 rounded-lg"
+        className="border border-gray-200 dark:border-gray-600 rounded-lg"
         style={{ width: size, height: size }}
       />
       <div className="flex space-x-2">
         <button
           onClick={handlePrint}
-          className="flex items-center px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="flex items-center px-3 py-1 text-xs bg-blue-500 dark:bg-blue-600 text-white rounded hover:bg-blue-600 dark:hover:bg-blue-500 transition-colors duration-200"
         >
           <Printer className="h-3 w-3 mr-1" />
           Print
         </button>
         <button
           onClick={handleDownload}
-          className="flex items-center px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
+          className="flex items-center px-3 py-1 text-xs bg-green-500 dark:bg-green-600 text-white rounded hover:bg-green-600 dark:hover:bg-green-500 transition-colors duration-200"
         >
           <Download className="h-3 w-3 mr-1" />
           Download
@@ -198,142 +146,103 @@ const QRCodeGenerator: React.FC<{
   );
 };
 
-// Mock transaction data
-const mockTransaction: Transaction = {
-  id: 1,
-  transaction_type: 'check_out',
-  reference_no: 'TXN-OUT-20241201-001',
-  first_person: 'John Doe',
-  second_person: 'Jane Smith',
-  location: 'Office Building A',
-  transaction_date: '2024-12-01T10:30:00Z',
-  notes: 'Equipment checkout for project meeting. This equipment will be used for the quarterly presentation to stakeholders. Please ensure all items are returned in good condition.',
-  status: 'open',
-  created_by: 'admin',
-  created_at: '2024-12-01T10:30:00Z',
-  items: [
-    {
-      id: 1,
-      product_id: 'PROJ-001',
-      product: {
-        id: 'PROJ-001',
-        name: 'Projector Epson EB-X41',
-        description: 'High resolution projector for presentations',
-        serial_number: 'EP2024001',
-        barcode: '123456789012',
-        qr_data: 'PROJ-001',
-        status: 'checked_out'
-      },
-      quantity: 1,
-      condition_before: 'excellent',
-      condition_after: '',
-      status: 'processed',
-      notes: 'Projector for quarterly presentation'
-    },
-    {
-      id: 2,
-      product_id: 'LAP-002',
-      product: {
-        id: 'LAP-002',
-        name: 'Laptop Dell XPS 13',
-        description: 'Business laptop for office work',
-        serial_number: 'DL2024002',
-        barcode: '123456789013',
-        qr_data: 'LAP-002',
-        status: 'checked_out'
-      },
-      quantity: 1,
-      condition_before: 'good',
-      condition_after: '',
-      status: 'processed',
-      notes: 'Laptop for demo purposes'
-    },
-    {
-      id: 3,
-      product_id: 'CAM-003',
-      product: {
-        id: 'CAM-003',
-        name: 'Digital Camera Canon EOS',
-        description: 'Professional DSLR camera',
-        serial_number: 'CN2024003',
-        barcode: '123456789014',
-        qr_data: 'CAM-003',
-        status: 'checked_out'
-      },
-      quantity: 1,
-      condition_before: 'excellent',
-      condition_after: '',
-      status: 'processed',
-      notes: 'For event documentation'
-    }
-  ]
+const ITEM_STATUS_LABELS: Record<TransactionItem['status'], string> = {
+  processed: 'Processed',
+  pending: 'Pending',
+  returned: 'Returned'
 };
 
 const TransactionDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  
+  const {
+    currentTransaction,
+    transactionItems,
+    isLoading,
+    error,
+    getTransactionById,
+    fetchTransactionItems,
+    deleteTransaction,
+    closeTransaction,
+    reopenTransaction,
+    clearCurrentTransaction,
+    clearError
+  } = useTransactionStore();
+
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [statusChangeLoading, setStatusChangeLoading] = useState(false);
 
   useEffect(() => {
-    loadTransaction();
+    if (id) {
+      loadTransactionData();
+    }
+
+    return () => {
+      clearCurrentTransaction();
+    };
   }, [id]);
 
-  const loadTransaction = async () => {
-    setLoading(true);
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      if (id === '1' || !id) {
-        setTransaction(mockTransaction);
-      } else {
-        // Generate transaction for other IDs
-        setTransaction({
-          ...mockTransaction,
-          id: parseInt(id),
-          reference_no: `TXN-${id.padStart(3, '0')}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
-          first_person: `Person ${id}`,
-          location: `Location ${id}`
-        });
-      }
-    } catch (error) {
-      setError('Failed to load transaction');
-      console.error('Failed to load transaction:', error);
-    } finally {
-      setLoading(false);
+  const loadTransactionData = async () => {
+    if (!id) return;
+
+    const transactionId = parseInt(id);
+    if (isNaN(transactionId)) {
+      console.error('Invalid transaction ID:', id);
+      navigate('/transactions');
+      return;
     }
+
+    console.log('🔄 Loading transaction data for ID:', transactionId);
+    
+    const transaction = await getTransactionById(transactionId);
+    if (!transaction) {
+      console.error('Transaction not found:', transactionId);
+      navigate('/transactions');
+      return;
+    }
+
+    // Load transaction items
+    await fetchTransactionItems(transactionId);
   };
 
   const handleDelete = async () => {
-    if (!id) return;
+    if (!currentTransaction?.id) return;
     
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
+    console.log('🗑️ Deleting transaction:', currentTransaction.id);
+    
+    const success = await deleteTransaction(currentTransaction.id);
+    if (success) {
       navigate('/transactions');
-    } catch (error) {
-      setError('Failed to delete transaction');
-      console.error('Failed to delete transaction:', error);
     }
   };
 
   const handleStatusChange = async (action: 'close' | 'reopen') => {
-    if (!id || !transaction) return;
+    if (!currentTransaction?.id) return;
+    
+    console.log('🔄 Changing status:', action);
+    setStatusChangeLoading(true);
+    setShowActionMenu(false);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
+      let success = false;
       
-      const updatedStatus = action === 'close' ? 'closed' : 'open';
-      setTransaction({ ...transaction, status: updatedStatus });
-      setShowActionMenu(false);
+      if (action === 'close') {
+        success = await closeTransaction(currentTransaction.id);
+      } else {
+        success = await reopenTransaction(currentTransaction.id);
+      }
+      
+      if (success) {
+        console.log('✅ Status changed successfully');
+        // Reload transaction data to get updated info
+        await loadTransactionData();
+      }
     } catch (error) {
-      setError(`Failed to ${action} transaction`);
-      console.error(`Failed to ${action} transaction:`, error);
+      console.error('❌ Failed to change status:', error);
+    } finally {
+      setStatusChangeLoading(false);
     }
   };
 
@@ -350,82 +259,98 @@ const TransactionDetail: React.FC = () => {
   const getStatusBadgeColor = (status: Transaction['status']) => {
     switch (status) {
       case 'open':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200';
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200';
       case 'closed':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
     }
   };
 
   const getTypeBadgeColor = (type: Transaction['transaction_type']) => {
     switch (type) {
       case 'check_out':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200';
       case 'check_in':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200';
       case 'maintenance':
-        return 'bg-orange-100 text-orange-800';
+        return 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200';
       case 'repair':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200';
       case 'lost':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
       case 'return':
-        return 'bg-purple-100 text-purple-800';
+        return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
     }
   };
 
   const getItemStatusIcon = (status: string) => {
     switch (status) {
       case 'processed':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400" />;
       case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-500" />;
+        return <Clock className="h-4 w-4 text-yellow-500 dark:text-yellow-400" />;
       case 'returned':
-        return <CheckCircle className="h-4 w-4 text-blue-500" />;
-      case 'lost':
-        return <XCircle className="h-4 w-4 text-red-500" />;
+        return <CheckCircle className="h-4 w-4 text-blue-500 dark:text-blue-400" />;
       default:
-        return <Clock className="h-4 w-4 text-gray-500" />;
+        return <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />;
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
+        <div className="text-center">
+          <RefreshCw className="h-32 w-32 animate-spin text-blue-500 dark:text-blue-400 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading transaction...</p>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-500 text-xl mb-4">Error: {error}</div>
-          <button
-            onClick={() => navigate('/transactions')}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Back to Transactions
-          </button>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Error</h2>
+          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <div className="space-x-3">
+            <button
+              onClick={() => {
+                clearError();
+                loadTransactionData();
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => navigate('/transactions')}
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors duration-200"
+            >
+              Back to Transactions
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!transaction) {
+  if (!currentTransaction) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
         <div className="text-center">
-          <div className="text-gray-500 text-xl mb-4">Transaction not found</div>
+          <Package className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Transaction not found</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">The requested transaction could not be found.</p>
           <button
             onClick={() => navigate('/transactions')}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
           >
             Back to Transactions
           </button>
@@ -434,8 +359,10 @@ const TransactionDetail: React.FC = () => {
     );
   }
 
-  const totalItems = transaction.items?.length || 0;
-  const totalQuantity = transaction.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+  const transaction = currentTransaction;
+  const items = transaction.items || transaction.TransactionItems || transactionItems || [];
+  const totalItems = items.length;
+  const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
 
   // Generate QR data
   const qrData = JSON.stringify({
@@ -447,20 +374,20 @@ const TransactionDetail: React.FC = () => {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => navigate('/transactions')}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
-              <h1 className="text-xl font-semibold text-gray-900">Transaction Details</h1>
-              <span className="text-sm text-gray-500">
+              <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Transaction Details</h1>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
                 {transaction.reference_no || `#${transaction.id}`}
               </span>
             </div>
@@ -468,7 +395,7 @@ const TransactionDetail: React.FC = () => {
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => navigate(`/transactions/${id}/edit`)}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
               >
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
@@ -477,18 +404,23 @@ const TransactionDetail: React.FC = () => {
               <div className="relative">
                 <button
                   onClick={() => setShowActionMenu(!showActionMenu)}
-                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  disabled={statusChangeLoading}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
                 >
-                  <MoreVertical className="h-4 w-4" />
+                  {statusChangeLoading ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MoreVertical className="h-4 w-4" />
+                  )}
                 </button>
                 
-                {showActionMenu && (
-                  <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                {showActionMenu && !statusChangeLoading && (
+                  <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white dark:bg-gray-700 ring-1 ring-black ring-opacity-5 dark:ring-gray-600 z-10">
                     <div className="py-1">
                       {transaction.status === 'open' ? (
                         <button
                           onClick={() => handleStatusChange('close')}
-                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200"
                         >
                           <CheckCircle className="inline h-4 w-4 mr-2" />
                           Close Transaction
@@ -496,16 +428,16 @@ const TransactionDetail: React.FC = () => {
                       ) : (
                         <button
                           onClick={() => handleStatusChange('reopen')}
-                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200"
                         >
                           <XCircle className="inline h-4 w-4 mr-2" />
                           Reopen Transaction
                         </button>
                       )}
-                      <hr className="my-1" />
+                      <hr className="my-1 border-gray-200 dark:border-gray-600" />
                       <button
                         onClick={() => setShowDeleteModal(true)}
-                        className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                        className="block w-full text-left px-4 py-2 text-sm text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-200"
                       >
                         <Trash2 className="inline h-4 w-4 mr-2" />
                         Delete
@@ -523,14 +455,14 @@ const TransactionDetail: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left column - Transaction Information */}
           <div className="lg:col-span-2">
-            <div className="bg-white shadow rounded-lg">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                       {TRANSACTION_TYPE_LABELS[transaction.transaction_type]}
                     </h2>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       {transaction.reference_no || `#${transaction.id}`}
                     </p>
                   </div>
@@ -547,57 +479,59 @@ const TransactionDetail: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
                     <div className="flex items-start space-x-3">
-                      <User className="h-5 w-5 text-gray-400 mt-0.5" />
+                      <User className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-gray-900">First Person</p>
-                        <p className="text-sm text-gray-600">{transaction.first_person}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">First Person</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.first_person}</p>
                       </div>
                     </div>
 
                     {transaction.second_person && (
                       <div className="flex items-start space-x-3">
-                        <User className="h-5 w-5 text-gray-400 mt-0.5" />
+                        <User className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-gray-900">Second Person</p>
-                          <p className="text-sm text-gray-600">{transaction.second_person}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">Second Person</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.second_person}</p>
                         </div>
                       </div>
                     )}
 
                     <div className="flex items-start space-x-3">
-                      <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
+                      <MapPin className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-gray-900">Location</p>
-                        <p className="text-sm text-gray-600">{transaction.location}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">Location</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.location}</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-4">
                     <div className="flex items-start space-x-3">
-                      <Calendar className="h-5 w-5 text-gray-400 mt-0.5" />
+                      <Calendar className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-gray-900">Transaction Date</p>
-                        <p className="text-sm text-gray-600">{formatDate(transaction.transaction_date)}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">Transaction Date</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                          {formatDate(transaction.transaction_date || transaction.created_at || '')}
+                        </p>
                       </div>
                     </div>
 
                     {transaction.reference_no && (
                       <div className="flex items-start space-x-3">
-                        <Hash className="h-5 w-5 text-gray-400 mt-0.5" />
+                        <Hash className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-gray-900">Reference Number</p>
-                          <p className="text-sm text-gray-600">{transaction.reference_no}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">Reference Number</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.reference_no}</p>
                         </div>
                       </div>
                     )}
 
                     {transaction.created_by && (
                       <div className="flex items-start space-x-3">
-                        <User className="h-5 w-5 text-gray-400 mt-0.5" />
+                        <User className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium text-gray-900">Created By</p>
-                          <p className="text-sm text-gray-600">{transaction.created_by}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">Created By</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.created_by}</p>
                         </div>
                       </div>
                     )}
@@ -607,10 +541,10 @@ const TransactionDetail: React.FC = () => {
                 {transaction.notes && (
                   <div className="mt-6">
                     <div className="flex items-start space-x-3">
-                      <FileText className="h-5 w-5 text-gray-400 mt-0.5" />
+                      <FileText className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">Notes</p>
-                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">Notes</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">
                           {transaction.notes}
                         </p>
                       </div>
@@ -621,96 +555,91 @@ const TransactionDetail: React.FC = () => {
             </div>
 
             {/* Transaction Items */}
-            <div className="mt-6 bg-white shadow rounded-lg">
+            <div className="mt-6 bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-medium text-gray-900">Transaction Items</h3>
-                  <div className="text-sm text-gray-500">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">Transaction Items</h3>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
                     {totalItems} items ({totalQuantity} total quantity)
                   </div>
                 </div>
 
-                {!transaction.items || transaction.items.length === 0 ? (
+                {items.length === 0 ? (
                   <div className="text-center py-12">
-                    <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500">No items in this transaction</p>
+                    <Package className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                    <p className="text-gray-500 dark:text-gray-400">No items in this transaction</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-700">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             Product
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             Quantity
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             Condition
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             Status
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             Notes
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {transaction.items.map((item, index) => (
-                          <tr key={index} className="hover:bg-gray-50">
+                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        {items.map((item, index) => (
+                          <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {item.product?.name || 'Unknown Product'}
+                                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                  {item.Product?.name || 'Unknown Product'}
                                 </div>
-                                <div className="text-sm text-gray-500">
+                                <div className="text-sm text-gray-500 dark:text-gray-400">
                                   ID: {item.product_id}
                                 </div>
-                                {item.product?.serial_number && (
-                                  <div className="text-xs text-gray-400">
-                                    S/N: {item.product.serial_number}
-                                  </div>
-                                )}
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">{item.quantity}</div>
+                              <div className="text-sm text-gray-900 dark:text-white">{item.quantity}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-xs">
                                 {item.condition_before && (
                                   <div className="mb-1">
-                                    <span className="text-gray-500">Before:</span>{' '}
-                                    <span className="text-gray-900">
+                                    <span className="text-gray-500 dark:text-gray-400">Before:</span>{' '}
+                                    <span className="text-gray-900 dark:text-white">
                                       {item.condition_before.replace('_', ' ').toUpperCase()}
                                     </span>
                                   </div>
                                 )}
                                 {item.condition_after && (
                                   <div>
-                                    <span className="text-gray-500">After:</span>{' '}
-                                    <span className="text-gray-900">
+                                    <span className="text-gray-500 dark:text-gray-400">After:</span>{' '}
+                                    <span className="text-gray-900 dark:text-white">
                                       {item.condition_after.replace('_', ' ').toUpperCase()}
                                     </span>
                                   </div>
                                 )}
                                 {!item.condition_before && !item.condition_after && (
-                                  <span className="text-gray-400">-</span>
+                                  <span className="text-gray-400 dark:text-gray-500">-</span>
                                 )}
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center">
                                 {getItemStatusIcon(item.status)}
-                                <span className="ml-2 text-sm text-gray-900">
-                                  {ITEM_STATUS_LABELS[item.status]}
+                                <span className="ml-2 text-sm text-gray-900 dark:text-white">
+                                  {ITEM_STATUS_LABELS[item.status] || item.status}
                                 </span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="text-sm text-gray-600 max-w-xs">
+                              <div className="text-sm text-gray-600 dark:text-gray-300 max-w-xs">
                                 {item.notes || '-'}
                               </div>
                             </td>
@@ -724,12 +653,12 @@ const TransactionDetail: React.FC = () => {
             </div>
           </div>
 
-   {/* Right column - QR Code and Summary */}
+          {/* Right column - QR Code and Summary */}
           <div className="lg:col-span-1">
             {/* QR Code */}
-            <div className="bg-white shadow rounded-lg">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-lg font-medium text-gray-900">Transaction QR Code</h2>
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-medium text-gray-900 dark:text-white">Transaction QR Code</h2>
               </div>
               <div className="p-6">
                 <div className="flex justify-center">
@@ -740,7 +669,7 @@ const TransactionDetail: React.FC = () => {
                   />
                 </div>
                 <div className="mt-4 text-center">
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     Scan this QR code to quickly access transaction details
                   </p>
                 </div>
@@ -748,24 +677,30 @@ const TransactionDetail: React.FC = () => {
             </div>
 
             {/* Transaction Summary */}
-            <div className="bg-white shadow rounded-lg mt-6">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-lg font-medium text-gray-900">Summary</h2>
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 mt-6">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-medium text-gray-900 dark:text-white">Summary</h2>
               </div>
               <div className="p-6">
                 <div className="space-y-3">
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Total Items:</span>
-                    <span className="text-sm font-medium text-gray-900">{totalItems}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Total Items:</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">{totalItems}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Total Quantity:</span>
-                    <span className="text-sm font-medium text-gray-900">{totalQuantity}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Total Quantity:</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">{totalQuantity}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm text-gray-500">Created:</span>
-                    <span className="text-sm font-medium text-gray-900">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Created:</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
                       {transaction.created_at ? formatDate(transaction.created_at) : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Status:</span>
+                    <span className={`text-sm font-medium px-2 py-1 rounded-full ${getStatusBadgeColor(transaction.status)}`}>
+                      {TRANSACTION_STATUS_LABELS[transaction.status]}
                     </span>
                   </div>
                 </div>
@@ -773,15 +708,15 @@ const TransactionDetail: React.FC = () => {
             </div>
 
             {/* Quick Actions */}
-            <div className="bg-white shadow rounded-lg mt-6">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-lg font-medium text-gray-900">Quick Actions</h2>
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 mt-6">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-medium text-gray-900 dark:text-white">Quick Actions</h2>
               </div>
               <div className="p-6">
                 <div className="space-y-3">
                   <button
                     onClick={() => navigate(`/transactions/${id}/edit`)}
-                    className="w-full flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Transaction
@@ -790,28 +725,46 @@ const TransactionDetail: React.FC = () => {
                   {transaction.status === 'open' ? (
                     <button
                       onClick={() => handleStatusChange('close')}
-                      className="w-full flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      disabled={statusChangeLoading}
+                      className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
                     >
-                      <CheckCircle className="h-4 w-4 mr-2" />
+                      {statusChangeLoading ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                      )}
                       Close Transaction
                     </button>
                   ) : (
                     <button
                       onClick={() => handleStatusChange('reopen')}
-                      className="w-full flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      disabled={statusChangeLoading}
+                      className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
                     >
-                      <XCircle className="h-4 w-4 mr-2" />
+                      {statusChangeLoading ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <XCircle className="h-4 w-4 mr-2" />
+                      )}
                       Reopen Transaction
                     </button>
                   )}
                   
                   <button
                     onClick={() => navigate('/scanner')}
-                    className="w-full flex items-center px-3 py-2 border border-blue-300 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100"
+                    className="w-full flex items-center px-3 py-2 border border-blue-300 dark:border-blue-600 shadow-sm text-sm font-medium rounded-md text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors duration-200"
                   >
                     <QrCode className="h-4 w-4 mr-2" />
                     Use Scanner
                   </button>
+{/*                   
+                  <button
+                    onClick={() => window.print()}
+                    className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Transaction
+                  </button> */}
                 </div>
               </div>
             </div>
@@ -821,15 +774,15 @@ const TransactionDetail: React.FC = () => {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div className="fixed inset-0 bg-gray-600 dark:bg-gray-900 bg-opacity-50 dark:bg-opacity-75 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-700 w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
             <div className="mt-3 text-center">
-              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
-                <Trash2 className="h-6 w-6 text-red-600" />
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30">
+                <Trash2 className="h-6 w-6 text-red-600 dark:text-red-400" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mt-4">Delete Transaction</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mt-4">Delete Transaction</h3>
               <div className="mt-2 px-7 py-3">
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Are you sure you want to delete this transaction? 
                   All items and data will be permanently removed. This action cannot be undone.
                 </p>
@@ -837,15 +790,16 @@ const TransactionDetail: React.FC = () => {
               <div className="flex justify-center space-x-3 mt-4">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 bg-white text-gray-500 border border-gray-300 rounded-md hover:bg-gray-50"
+                  className="px-4 py-2 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-md hover:bg-red-700 dark:hover:bg-red-600 disabled:opacity-50 transition-colors duration-200"
                 >
-                  Delete
+                  {isLoading ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
             </div>
