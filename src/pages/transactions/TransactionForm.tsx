@@ -69,7 +69,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Product state - INI YANG DITAMBAHKAN
+  // Product state
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [productError, setProductError] = useState<string | null>(null);
@@ -83,7 +83,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
       setFormData(prev => ({ ...prev, reference_no: referenceNo }));
     }
 
-    // Load products when component mounts - INI YANG DITAMBAHKAN
+    // Load products when component mounts
     loadProducts();
 
     return () => {
@@ -91,29 +91,42 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     };
   }, [mode, id]);
 
-  // INI FUNCTION BARU UNTUK LOAD PRODUCTS DARI API REAL
+  // MODIFIED: Load products based on transaction type
   const loadProducts = async () => {
     setLoadingProducts(true);
     setProductError(null);
     
     try {
       console.log('🔄 Loading products from API...');
+      console.log('🎯 Transaction type:', formData.transaction_type);
       
-      // Gunakan product service yang sudah ada dengan filter Available
-      const response = await productService.getProducts(1, 100, {
-        status: 'Available'
-      });
+      // Filter berdasarkan transaction type
+      let statusFilter: string | undefined;
+      
+      if (formData.transaction_type === 'check_in') {
+        // Untuk Check In: ambil yang status "Checked Out" 
+        statusFilter = 'Checked Out';
+      } else if (formData.transaction_type === 'check_out') {
+        // Untuk Check Out: ambil yang status "Available"
+        statusFilter = 'Available';
+      }
+      // Untuk transaction type lain (transfer, maintenance, dll): ambil semua
+      
+      const response = await productService.getProducts(1, 100, statusFilter ? {
+        status: statusFilter
+      } : {});
       
       if (response.success && response.data) {
-        // Filter lebih ketat - hanya products yang benar-benar bisa dipilih
-        const availableProducts = response.data.products.filter(product => 
-          product.status === 'Available' && 
-          product.quantity > 0 // Pastikan ada stock
-        );
+        const filteredProducts = response.data.products;
         
-        setProducts(availableProducts);
-        console.log('✅ Available products loaded:', availableProducts.length);
-        console.log('📦 Products with stock > 0:', availableProducts.filter(p => p.quantity > 0).length);
+        setProducts(filteredProducts);
+        console.log(`✅ Products loaded for ${formData.transaction_type}:`, filteredProducts.length);
+        console.log('📦 Products by status:', 
+          filteredProducts.reduce((acc, p) => {
+            acc[p.status] = (acc[p.status] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>)
+        );
       } else {
         throw new Error(response.message || 'Failed to load products');
       }
@@ -121,13 +134,19 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     } catch (error: any) {
       console.error('❌ Failed to load products:', error);
       setProductError('Failed to load products. Please try again.');
-      
-      // Fallback: tidak ada mock data, tampilkan error
       setProducts([]);
     } finally {
       setLoadingProducts(false);
     }
   };
+
+  // Add useEffect to reload products when transaction type changes
+  useEffect(() => {
+    // Reload products ketika transaction type berubah
+    if (formData.transaction_type) {
+      loadProducts();
+    }
+  }, [formData.transaction_type]);
 
   useEffect(() => {
     // Populate form when currentTransaction is loaded (edit mode)
@@ -185,6 +204,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     }
   };
 
+  // MODIFIED: Remove quantity minimum validation
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
@@ -204,13 +224,14 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
       errors.items = 'At least one item is required';
     }
 
-    // Validate each item
+    // Validate each item - HAPUS validasi quantity minimal 1
     items.forEach((item, index) => {
       if (!item.product_id) {
         errors[`item_${index}_product`] = 'Product is required';
       }
-      if (!item.quantity || item.quantity < 1) {
-        errors[`item_${index}_quantity`] = 'Quantity must be at least 1';
+      // MODIFIED: Hanya validasi quantity tidak boleh kosong, boleh 0 atau negatif
+      if (item.quantity === undefined || item.quantity === null) {
+        errors[`item_${index}_quantity`] = 'Quantity is required';
       }
     });
 
@@ -239,19 +260,20 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     }
   };
 
+  // MODIFIED: Check product availability based on transaction type
   const handleAddItem = (product: Product) => {
-    // Double check availability before adding
-    if (product.status !== 'Available') {
-      setProductError(`Product "${product.name}" is not available (Status: ${product.status})`);
+    // Validasi berdasarkan transaction type
+    if (formData.transaction_type === 'check_in' && product.status !== 'Checked Out') {
+      setProductError(`For Check In: only "Checked Out" products can be selected. "${product.name}" is ${product.status}`);
       return;
     }
     
-    if (product.quantity <= 0) {
-      setProductError(`Product "${product.name}" is out of stock`);
+    if (formData.transaction_type === 'check_out' && product.status !== 'Available') {
+      setProductError(`For Check Out: only "Available" products can be selected. "${product.name}" is ${product.status}`);
       return;
     }
     
-    // Check if already added
+    // Check if already added - ini tetap ada
     const isAlreadyAdded = items.some(item => item.product_id === product.product_id);
     if (isAlreadyAdded) {
       setProductError(`Product "${product.name}" is already added to this transaction`);
@@ -259,7 +281,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     }
     
     const newItem: CreateTransactionItemRequest = {
-      product_id: product.product_id, // Sesuai dengan API
+      product_id: product.product_id,
       quantity: 1,
       condition_before: product.condition || 'good',
       condition_after: '',
@@ -277,7 +299,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
       setValidationErrors(prev => ({ ...prev, items: '' }));
     }
     
-    console.log(`✅ Added product: ${product.name} (ID: ${product.product_id})`);
+    console.log(`✅ Added product: ${product.name} (ID: ${product.product_id}) - Status: ${product.status} for ${formData.transaction_type}`);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -354,10 +376,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     return products.find(p => p.product_id === productId);
   };
 
-  // Search products dari API
+  // MODIFIED: Search products based on transaction type
   const handleSearchProducts = async (query: string) => {
     if (!query.trim()) {
-      // Jika search kosong, load semua available products
+      // Jika search kosong, load products sesuai transaction type
       await loadProducts();
       return;
     }
@@ -365,11 +387,20 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     setLoadingProducts(true);
     try {
       console.log('🔍 Searching products:', query);
+      console.log('🎯 For transaction type:', formData.transaction_type);
       
-      // Gunakan product service yang sudah ada dengan search filter
+      // Filter berdasarkan transaction type
+      let statusFilter: string | undefined;
+      
+      if (formData.transaction_type === 'check_in') {
+        statusFilter = 'Checked Out';
+      } else if (formData.transaction_type === 'check_out') {
+        statusFilter = 'Available';
+      }
+      
       const response = await productService.getProducts(1, 50, {
         search: query,
-        status: 'Available'
+        ...(statusFilter && { status: statusFilter })
       });
       
       if (response.success && response.data) {
@@ -461,7 +492,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
           </div>
         )}
 
-        <div onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Transaction Details */}
             <div className="lg:col-span-2">
@@ -490,6 +521,22 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                       {validationErrors.transaction_type && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.transaction_type}</p>
                       )}
+                      
+                      {/* Helper text untuk transaction type */}
+                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        {formData.transaction_type === 'check_in' && (
+                          <div className="flex items-center text-blue-600 dark:text-blue-400">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Check In: Select items with "Checked Out" status
+                          </div>
+                        )}
+                        {formData.transaction_type === 'check_out' && (
+                          <div className="flex items-center text-green-600 dark:text-green-400">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Check Out: Select items with "Available" status
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div>
@@ -579,7 +626,18 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow mt-6 border border-gray-200 dark:border-gray-700">
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-medium text-gray-900 dark:text-white">Items</h2>
+                    <div>
+                      <h2 className="text-lg font-medium text-gray-900 dark:text-white">Items</h2>
+                      {formData.transaction_type && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          {formData.transaction_type === 'check_in' 
+                            ? 'Only "Checked Out" items can be selected' 
+                            : formData.transaction_type === 'check_out'
+                            ? 'Only "Available" items can be selected'
+                            : 'All items can be selected'}
+                        </p>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={() => setShowAddItem(true)}
@@ -625,6 +683,15 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                     {product?.name || `Product ${item.product_id}`}
                                   </h4>
                                   <p className="text-sm text-gray-500 dark:text-gray-400">ID: {item.product_id}</p>
+                                  {product && (
+                                    <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                                      Status: <span className={`font-medium ${
+                                        product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
+                                        product.status === 'Checked Out' ? 'text-red-600 dark:text-red-400' :
+                                        'text-orange-600 dark:text-orange-400'
+                                      }`}>{product.status}</span>
+                                    </div>
+                                  )}
                                   
                                   <div className="mt-2">
                                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -632,19 +699,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                     </label>
                                     <input
                                       type="number"
-                                      min="1"
-                                      max={product?.quantity || 999} // Limit berdasarkan stock yang tersedia
                                       value={item.quantity}
                                       onChange={(e) => {
-                                        const newQuantity = parseInt(e.target.value) || 1;
-                                        const maxQuantity = product?.quantity || 999;
-                                        
-                                        if (newQuantity > maxQuantity) {
-                                          // Show warning jika melebihi stock
-                                          console.warn(`Quantity cannot exceed available stock (${maxQuantity})`);
-                                          return;
-                                        }
-                                        
+                                        const newQuantity = parseInt(e.target.value) || 0;
                                         handleItemChange(index, 'quantity', newQuantity);
                                       }}
                                       className={`w-full px-2 py-1 border rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
@@ -760,11 +817,30 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                         {formData.status?.charAt(0).toUpperCase() + formData.status?.slice(1)}
                       </span>
                     </div>
+                    
+                    {/* Transaction Type Info */}
+                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex justify-between items-start">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Type:</span>
+                        <div className="text-right">
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            {TRANSACTION_TYPE_LABELS[formData.transaction_type as keyof typeof TRANSACTION_TYPE_LABELS]}
+                          </span>
+                          {formData.transaction_type && (
+                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                              {formData.transaction_type === 'check_in' ? 'Return items' :
+                               formData.transaction_type === 'check_out' ? 'Borrow items' :
+                               'Transfer/Other'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mt-6 space-y-3">
                     <button
-                      onClick={handleSubmit}
+                      type="submit"
                       disabled={isSubmitting || isLoading}
                       className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                     >
@@ -782,6 +858,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => navigate('/transactions')}
                       className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
                     >
@@ -792,7 +869,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
               </div>
             </div>
           </div>
-        </div>
+        </form>
       </div>
 
       {/* Add Item Modal */}
@@ -801,7 +878,18 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
           <div className="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-700 w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
             <div className="mt-3">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Add Item</h3>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white">Add Item</h3>
+                  {formData.transaction_type && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      {formData.transaction_type === 'check_in' 
+                        ? 'Showing only "Checked Out" items' 
+                        : formData.transaction_type === 'check_out'
+                        ? 'Showing only "Available" items'
+                        : 'Showing all items'}
+                    </p>
+                  )}
+                </div>
                 <button
                   onClick={() => setShowAddItem(false)}
                   className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-200"
@@ -822,7 +910,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                     value={searchProduct}
                     onChange={(e) => {
                       setSearchProduct(e.target.value);
-                      // Real-time search dengan debounce bisa ditambahkan di sini
                     }}
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
@@ -857,7 +944,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                     <Package className="h-8 w-8 mx-auto mb-2" />
                     <p>No products found</p>
                     <p className="text-sm">
-                      {searchProduct ? 'Try searching with different keywords' : 'No available products'}
+                      {searchProduct ? 'Try searching with different keywords' : 
+                       formData.transaction_type === 'check_in' ? 'No "Checked Out" products available' :
+                       formData.transaction_type === 'check_out' ? 'No "Available" products in stock' :
+                       'No products available'}
                     </p>
                     {!searchProduct && (
                       <button
@@ -871,21 +961,35 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                 ) : (
                   <div className="space-y-2">
                     {filteredProducts.map(product => {
-                      // Check if product is already added
+                      // Check availability based on transaction type
                       const isAlreadyAdded = items.some(item => item.product_id === product.product_id);
                       
-                      // Check if product is available for transaction
-                      const isUnavailable = product.status !== 'Available' || 
-                                           (product.quantity <= 0) ||
-                                           (product.status === 'Checked Out') ||
-                                           (product.status === 'Maintenance') ||
-                                           (product.status === 'Repair') ||
-                                           (product.status === 'Lost');
+                      let cannotSelect = isAlreadyAdded;
+                      let reason = '';
                       
-                      // Check if quantity is 1 and status is not Available
-                      const isSingleItemNotAvailable = product.quantity === 1 && product.status !== 'Available';
+                      if (formData.transaction_type === 'check_in') {
+                        // Untuk Check In: hanya bisa pilih yang "Checked Out"
+                        if (product.status !== 'Checked Out') {
+                          cannotSelect = true;
+                          reason = `Check In requires "Checked Out" status (current: ${product.status})`;
+                        }
+                      } else if (formData.transaction_type === 'check_out') {
+                        // Untuk Check Out: hanya bisa pilih yang "Available"
+                        if (product.status !== 'Available') {
+                          cannotSelect = true;
+                          reason = `Check Out requires "Available" status (current: ${product.status})`;
+                        }
+                        // Tambahan validasi untuk check out: cek stock
+                        if (product.quantity <= 0) {
+                          cannotSelect = true;
+                          reason = 'Out of stock';
+                        }
+                      }
+                      // Untuk transaction type lain: bisa pilih semua
                       
-                      const cannotSelect = isAlreadyAdded || isUnavailable || isSingleItemNotAvailable;
+                      if (isAlreadyAdded) {
+                        reason = 'Already added';
+                      }
                       
                       return (
                         <div
@@ -944,11 +1048,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                               </div>
                               
                               {/* Warning messages */}
-                              {isUnavailable && !isAlreadyAdded && (
+                              {cannotSelect && !isAlreadyAdded && reason && (
                                 <div className="mt-2 text-xs text-red-600 dark:text-red-400 font-medium">
-                                  {product.status !== 'Available' ? `Not available - ${product.status}` :
-                                   product.quantity <= 0 ? 'Out of stock' :
-                                   'Cannot be selected'}
+                                  {reason}
                                 </div>
                               )}
                             </div>
@@ -975,14 +1077,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                   Added
                                 </span>
                               )}
-                              {product.status !== 'Available' && !isAlreadyAdded && (
+                              {cannotSelect && !isAlreadyAdded && (
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                                  {product.status}
-                                </span>
-                              )}
-                              {product.quantity <= 0 && !isAlreadyAdded && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                                  No Stock
+                                  {formData.transaction_type === 'check_in' && product.status !== 'Checked Out' ? 'Need Checked Out' :
+                                   formData.transaction_type === 'check_out' && product.status !== 'Available' ? 'Not Available' :
+                                   formData.transaction_type === 'check_out' && product.quantity <= 0 ? 'No Stock' :
+                                   'Cannot Select'}
                                 </span>
                               )}
                             </div>
@@ -1001,23 +1101,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                 >
                   Cancel
                 </button>
-                {/* <button
-                  onClick={() => handleSearchProducts(searchProduct)}
-                  disabled={loadingProducts}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 transition-colors duration-200"
-                >
-                  {loadingProducts ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      Searching...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="h-4 w-4 mr-2" />
-                      Search API
-                    </>
-                  )}
-                </button> */}
                 <button
                   onClick={() => navigate('/scanner')}
                   className="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors duration-200"
