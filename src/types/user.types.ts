@@ -1,8 +1,10 @@
 // src/types/user.types.ts
 
-export interface UserLevel {
-  id: string;
-  level_name: string;  // Changed from 'name' to match backend
+export type UserLevel = 'admin' | 'manager' | 'technician' | 'warehouse' | 'viewer';
+
+export interface UserLevelInfo {
+  id: UserLevel;
+  level_name: string;
   description?: string;
   permissions?: string[];
   created_at: string;
@@ -15,7 +17,7 @@ export interface User {
   full_name: string;
   email?: string;
   phone?: string;
-  user_level_id: string;
+  user_level_id: UserLevel;
   department?: string;
   profile_image?: string;
   last_login?: string;
@@ -25,7 +27,7 @@ export interface User {
   notes?: string;
   
   // Relations from backend
-  UserLevel?: UserLevel;
+  userLevel?: UserLevelInfo;
   
   // For login tracking
   login_count?: number;
@@ -38,8 +40,8 @@ export interface CreateUserRequest {
   email?: string;
   phone?: string;
   password: string;
-  confirm_password: string;
-  user_level_id: string;
+  confirm_password?: string; // Optional for compatibility
+  user_level_id: UserLevel;
   department?: string;
   is_active?: boolean;
   notes?: string;
@@ -50,35 +52,79 @@ export interface UpdateUserRequest {
   full_name?: string;
   email?: string;
   phone?: string;
-  user_level_id?: string;
+  user_level_id?: UserLevel;
   department?: string;
   is_active?: boolean;
   notes?: string;
   profile_image?: string;
 }
 
+export interface ResetPasswordRequest {
+  newPassword: string;
+}
+
+export interface BulkUpdateRequest {
+  userIds: string[];
+  updates: {
+    user_level_id?: UserLevel;
+    department?: string;
+    is_active?: boolean;
+  };
+}
+
+export interface UserStats {
+  total: number;
+  active: number;
+  inactive: number;
+  byLevel: {
+    admin: number;
+    manager: number;
+    technician: number;
+    warehouse: number;
+    viewer: number;
+  };
+}
+
+export interface DepartmentStats {
+  [department: string]: number;
+}
+
 export interface UserFilters {
   search?: string;
-  user_level_id?: string;
+  user_level_id?: UserLevel;
   department?: string;
-  is_active?: boolean;
+  is_active?: boolean | string;
   last_login_from?: string;
   last_login_to?: string;
-  sort_by?: 'username' | 'full_name' | 'email' | 'created_at' | 'last_login';
-  sort_order?: 'ASC' | 'DESC';
+  sort?: string;
+  order?: 'ASC' | 'DESC';
 }
 
-export interface ChangePasswordRequest {
-  current_password: string;
-  new_password: string;
-  confirm_password: string;
+export interface UserQueryParams extends UserFilters {
+  page?: number;
+  limit?: number;
 }
 
-export interface ResetPasswordRequest {
-  new_password: string;
-  confirm_password: string;
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
 }
 
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+}
+
+// Legacy compatibility types
 export interface UserListResponse {
   success: boolean;
   data: {
@@ -93,11 +139,10 @@ export interface UserListResponse {
   message?: string;
 }
 
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  message?: string;
-  error?: string;
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
 }
 
 export interface UserStatsResponse extends ApiResponse<{
@@ -146,4 +191,42 @@ export interface LoginAttempt {
   success: boolean;
   failure_reason?: string;
   attempted_at: string;
+}
+
+// Form validation types
+export interface UserFormErrors {
+  username?: string;
+  password?: string;
+  full_name?: string;
+  email?: string;
+  phone?: string;
+  user_level_id?: string;
+  department?: string;
+  notes?: string;
+}
+
+// Store state types
+export interface UserListState {
+  users: User[];
+  isLoading: boolean;
+  error: string | null;
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  itemsPerPage: number;
+  filters: UserFilters;
+  selectedUsers: string[];
+}
+
+export interface UserDetailState {
+  currentUser: User | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
+export interface UserStatsState {
+  stats: UserStats | null;
+  departmentStats: DepartmentStats | null;
+  isLoading: boolean;
+  error: string | null;
 }

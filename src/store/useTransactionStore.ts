@@ -6,7 +6,8 @@ import {
   CreateTransactionRequest,
   UpdateTransactionRequest,
   TransactionQueryParams,
-  TransactionFilters
+  TransactionFilters,
+  TransactionStats
 } from '../types/transaction.types';
 import { transactionService } from '../services/transactionService';
 
@@ -33,14 +34,15 @@ interface TransactionStore {
   searchResults: Transaction[];
   isSearching: boolean;
   
-  // Statistics
-  stats: {
-    total: number;
-    byType: Record<string, number>;
-    byStatus: Record<string, number>;
-    byMonth: Record<string, number>;
-    recentActivity: Transaction[];
-  } | null;
+  // Statistics (matches backend response)
+  stats: TransactionStats | null;
+  
+  // Loading states for specific actions
+  isCreating: boolean;
+  isUpdating: boolean;
+  isDeleting: boolean;
+  isClosing: boolean;
+  isFetchingStats: boolean;
   
   // Actions - Transaction CRUD
   fetchTransactions: (params?: TransactionQueryParams) => Promise<void>;
@@ -52,9 +54,11 @@ interface TransactionStore {
   // Actions - Transaction Operations
   closeTransaction: (id: number) => Promise<boolean>;
   reopenTransaction: (id: number) => Promise<boolean>;
+  generateQRCode: (id: number) => Promise<any>;
   
   // Actions - Transaction Items
-  fetchTransactionItems: (transactionId: number) => Promise<void>;
+  addTransactionItem: (transactionId: number, itemData: any) => Promise<boolean>;
+  removeTransactionItem: (transactionId: number, itemId: number) => Promise<boolean>;
   
   // Actions - Filters and Search
   setFilters: (filters: TransactionFilters) => void;
@@ -66,12 +70,13 @@ interface TransactionStore {
   clearSearch: () => void;
   
   // Actions - Statistics
-  fetchTransactionStats: (startDate?: string, endDate?: string) => Promise<void>;
+  fetchTransactionStats: () => Promise<void>;
   
   // Actions - Utility
   clearError: () => void;
   clearCurrentTransaction: () => void;
   refreshTransactions: () => Promise<void>;
+  resetStore: () => void;
 }
 
 export const useTransactionStore = create<TransactionStore>((set, get) => ({
@@ -93,7 +98,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
   queryParams: {
     page: 1,
     limit: 10,
-    sort_by: 'created_at',
+    sort_by: 'transaction_date',
     sort_order: 'DESC'
   },
   
@@ -104,6 +109,13 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
   
   // Statistics
   stats: null,
+  
+  // Loading states
+  isCreating: false,
+  isUpdating: false,
+  isDeleting: false,
+  isClosing: false,
+  isFetchingStats: false,
 
   // Fetch all transactions
   fetchTransactions: async (params?: TransactionQueryParams) => {
@@ -117,16 +129,15 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.getTransactions(mergedParams);
       
       if (response.success && response.data) {
-        // Calculate pagination
-        const totalItems = response.count || response.data.length;
-        const totalPages = Math.ceil(totalItems / (mergedParams.limit || 10));
+        // Handle pagination from backend response
+        const pagination = response.meta?.pagination;
         
         set({
           transactions: response.data,
-          totalItems,
-          totalPages,
-          currentPage: mergedParams.page || 1,
-          itemsPerPage: mergedParams.limit || 10,
+          totalItems: pagination?.total || response.count || response.data.length,
+          totalPages: pagination?.totalPages || Math.ceil((response.count || response.data.length) / (mergedParams.limit || 10)),
+          currentPage: pagination?.page || mergedParams.page || 1,
+          itemsPerPage: pagination?.limit || mergedParams.limit || 10,
           queryParams: mergedParams,
           isLoading: false
         });
@@ -161,6 +172,8 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       if (response.success && response.data) {
         set({
           currentTransaction: response.data,
+          // Also set transaction items if included
+          transactionItems: response.data.items || response.data.TransactionItems || [],
           isLoading: false
         });
         
@@ -188,23 +201,29 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
 
   // Create new transaction
   createTransaction: async (data: CreateTransactionRequest) => {
-    set({ isLoading: true, error: null });
+    set({ isCreating: true, error: null });
     try {
       console.log('🔄 Creating transaction:', data);
+      
+      // Frontend validation
+      const validation = transactionService.validateTransactionData(data);
+      if (!validation.isValid) {
+        throw new Error(validation.errors.join(', '));
+      }
       
       const response = await transactionService.createTransaction(data);
       
       if (response.success) {
         // Refresh transactions list
         await get().fetchTransactions();
-        set({ isLoading: false });
+        set({ isCreating: false });
         
         console.log('✅ Transaction created successfully');
         return true;
       } else {
         set({
           error: response.message || 'Failed to create transaction',
-          isLoading: false
+          isCreating: false
         });
         return false;
       }
@@ -214,7 +233,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
                           'Network error occurred';
       set({
         error: errorMessage,
-        isLoading: false
+        isCreating: false
       });
       console.error('❌ createTransaction error:', error);
       return false;
@@ -223,7 +242,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
 
   // Update transaction
   updateTransaction: async (id: number, data: UpdateTransactionRequest) => {
-    set({ isLoading: true, error: null });
+    set({ isUpdating: true, error: null });
     try {
       console.log('🔄 Updating transaction:', { id, data });
       
@@ -237,14 +256,14 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
         
         // Refresh transactions list
         await get().fetchTransactions();
-        set({ isLoading: false });
+        set({ isUpdating: false });
         
         console.log('✅ Transaction updated successfully');
         return true;
       } else {
         set({
           error: response.message || 'Failed to update transaction',
-          isLoading: false
+          isUpdating: false
         });
         return false;
       }
@@ -254,7 +273,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
                           'Network error occurred';
       set({
         error: errorMessage,
-        isLoading: false
+        isUpdating: false
       });
       console.error('❌ updateTransaction error:', error);
       return false;
@@ -263,7 +282,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
 
   // Delete transaction
   deleteTransaction: async (id: number) => {
-    set({ isLoading: true, error: null });
+    set({ isDeleting: true, error: null });
     try {
       console.log('🔄 Deleting transaction:', id);
       
@@ -272,19 +291,19 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       if (response.success) {
         // Clear current transaction if it's the deleted one
         if (get().currentTransaction?.id === id) {
-          set({ currentTransaction: null });
+          set({ currentTransaction: null, transactionItems: [] });
         }
         
         // Refresh transactions list
         await get().fetchTransactions();
-        set({ isLoading: false });
+        set({ isDeleting: false });
         
         console.log('✅ Transaction deleted successfully');
         return true;
       } else {
         set({
           error: response.message || 'Failed to delete transaction',
-          isLoading: false
+          isDeleting: false
         });
         return false;
       }
@@ -294,15 +313,16 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
                           'Network error occurred';
       set({
         error: errorMessage,
-        isLoading: false
+        isDeleting: false
       });
       console.error('❌ deleteTransaction error:', error);
       return false;
     }
   },
 
-  // Close transaction
+  // Close transaction (uses backend endpoint)
   closeTransaction: async (id: number) => {
+    set({ isClosing: true, error: null });
     try {
       console.log('🔄 Closing transaction:', id);
       
@@ -316,20 +336,27 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
           ),
           currentTransaction: state.currentTransaction?.id === id
             ? { ...state.currentTransaction, status: 'closed' as const }
-            : state.currentTransaction
+            : state.currentTransaction,
+          isClosing: false
         }));
         
         console.log('✅ Transaction closed successfully');
         return true;
       } else {
-        set({ error: response.message || 'Failed to close transaction' });
+        set({ 
+          error: response.message || 'Failed to close transaction',
+          isClosing: false 
+        });
         return false;
       }
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 
                           error.message || 
                           'Network error occurred';
-      set({ error: errorMessage });
+      set({ 
+        error: errorMessage,
+        isClosing: false 
+      });
       console.error('❌ closeTransaction error:', error);
       return false;
     }
@@ -337,6 +364,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
 
   // Reopen transaction
   reopenTransaction: async (id: number) => {
+    set({ isUpdating: true, error: null });
     try {
       console.log('🔄 Reopening transaction:', id);
       
@@ -350,45 +378,78 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
           ),
           currentTransaction: state.currentTransaction?.id === id
             ? { ...state.currentTransaction, status: 'open' as const }
-            : state.currentTransaction
+            : state.currentTransaction,
+          isUpdating: false
         }));
         
         console.log('✅ Transaction reopened successfully');
         return true;
       } else {
-        set({ error: response.message || 'Failed to reopen transaction' });
+        set({ 
+          error: response.message || 'Failed to reopen transaction',
+          isUpdating: false 
+        });
         return false;
       }
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 
                           error.message || 
                           'Network error occurred';
-      set({ error: errorMessage });
+      set({ 
+        error: errorMessage,
+        isUpdating: false 
+      });
       console.error('❌ reopenTransaction error:', error);
       return false;
     }
   },
 
-  // Fetch transaction items
-  fetchTransactionItems: async (transactionId: number) => {
-    set({ isLoading: true, error: null });
+  // Generate QR code (backend endpoint)
+  generateQRCode: async (id: number) => {
+    set({ error: null });
     try {
-      console.log('🔄 Fetching transaction items for ID:', transactionId);
+      console.log('🔄 Generating QR code for transaction:', id);
       
-      const response = await transactionService.getTransactionItems(transactionId);
+      const response = await transactionService.generateTransactionQRCode(id);
       
       if (response.success) {
-        set({
-          transactionItems: response.data || [],
-          isLoading: false
-        });
+        console.log('✅ QR code generated successfully');
+        return response.data;
+      } else {
+        set({ error: response.message || 'Failed to generate QR code' });
+        return null;
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          'Network error occurred';
+      set({ error: errorMessage });
+      console.error('❌ generateQRCode error:', error);
+      return null;
+    }
+  },
+
+  // Add transaction item (backend endpoint)
+  addTransactionItem: async (transactionId: number, itemData: any) => {
+    set({ isUpdating: true, error: null });
+    try {
+      console.log('🔄 Adding item to transaction:', { transactionId, itemData });
+      
+      const response = await transactionService.addTransactionItem(transactionId, itemData);
+      
+      if (response.success) {
+        // Refresh current transaction
+        await get().getTransactionById(transactionId);
+        set({ isUpdating: false });
         
-        console.log('✅ Transaction items fetched successfully:', response.data?.length);
+        console.log('✅ Item added to transaction successfully');
+        return true;
       } else {
         set({
-          error: response.message || 'Failed to fetch transaction items',
-          isLoading: false
+          error: response.message || 'Failed to add item',
+          isUpdating: false
         });
+        return false;
       }
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 
@@ -396,9 +457,45 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
                           'Network error occurred';
       set({
         error: errorMessage,
-        isLoading: false
+        isUpdating: false
       });
-      console.error('❌ fetchTransactionItems error:', error);
+      console.error('❌ addTransactionItem error:', error);
+      return false;
+    }
+  },
+
+  // Remove transaction item (backend endpoint)
+  removeTransactionItem: async (transactionId: number, itemId: number) => {
+    set({ isUpdating: true, error: null });
+    try {
+      console.log('🔄 Removing item from transaction:', { transactionId, itemId });
+      
+      const response = await transactionService.removeTransactionItem(transactionId, itemId);
+      
+      if (response.success) {
+        // Refresh current transaction
+        await get().getTransactionById(transactionId);
+        set({ isUpdating: false });
+        
+        console.log('✅ Item removed from transaction successfully');
+        return true;
+      } else {
+        set({
+          error: response.message || 'Failed to remove item',
+          isUpdating: false
+        });
+        return false;
+      }
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          'Network error occurred';
+      set({
+        error: errorMessage,
+        isUpdating: false
+      });
+      console.error('❌ removeTransactionItem error:', error);
+      return false;
     }
   },
 
@@ -424,7 +521,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       queryParams: {
         page: 1,
         limit: state.queryParams.limit || 10,
-        sort_by: 'created_at',
+        sort_by: 'transaction_date',
         sort_order: 'DESC'
       },
       currentPage: 1
@@ -510,25 +607,25 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     });
   },
 
-  // Fetch transaction statistics
-  fetchTransactionStats: async (startDate?: string, endDate?: string) => {
-    set({ isLoading: true, error: null });
+  // Fetch transaction statistics (backend endpoint)
+  fetchTransactionStats: async () => {
+    set({ isFetchingStats: true, error: null });
     try {
-      console.log('📊 Fetching transaction stats:', { startDate, endDate });
+      console.log('📊 Fetching transaction stats from backend');
       
-      const response = await transactionService.getTransactionStats(startDate, endDate);
+      const response = await transactionService.getTransactionStats();
       
       if (response.success && response.data) {
         set({
           stats: response.data,
-          isLoading: false
+          isFetchingStats: false
         });
         
         console.log('✅ Transaction stats fetched successfully');
       } else {
         set({
           error: response.message || 'Failed to fetch transaction statistics',
-          isLoading: false
+          isFetchingStats: false
         });
       }
     } catch (error: any) {
@@ -537,7 +634,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
                           'Network error occurred';
       set({
         error: errorMessage,
-        isLoading: false
+        isFetchingStats: false
       });
       console.error('❌ fetchTransactionStats error:', error);
     }
@@ -563,5 +660,75 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     console.log('🔄 Refreshing transactions');
     const params = get().queryParams;
     await get().fetchTransactions(params);
+  },
+
+  // Reset store to initial state
+  resetStore: () => {
+    console.log('🔄 Resetting transaction store');
+    set({
+      transactions: [],
+      currentTransaction: null,
+      transactionItems: [],
+      isLoading: false,
+      error: null,
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10,
+      filters: {},
+      queryParams: {
+        page: 1,
+        limit: 10,
+        sort_by: 'transaction_date',
+        sort_order: 'DESC'
+      },
+      searchTerm: '',
+      searchResults: [],
+      isSearching: false,
+      stats: null,
+      isCreating: false,
+      isUpdating: false,
+      isDeleting: false,
+      isClosing: false,
+      isFetchingStats: false
+    });
+  },
+
+  // Utility methods
+  getTransactionById_local: (id: number) => {
+    const { transactions } = get();
+    return transactions.find(t => t.id === id) || null;
+  },
+
+  getTransactionsByType: (type: string) => {
+    const { transactions } = get();
+    return transactions.filter(t => t.transaction_type === type);
+  },
+
+  getTransactionsByStatus: (status: string) => {
+    const { transactions } = get();
+    return transactions.filter(t => t.status === status);
+  },
+
+  isAnyLoading: () => {
+    const { isLoading, isCreating, isUpdating, isDeleting, isClosing, isFetchingStats, isSearching } = get();
+    return isLoading || isCreating || isUpdating || isDeleting || isClosing || isFetchingStats || isSearching;
+  },
+
+  getStatsDisplay: () => {
+    const { stats } = get();
+    if (!stats) return null;
+
+    return {
+      total: stats.total,
+      open: stats.byStatus.open,
+      closed: stats.byStatus.closed,
+      checkOut: stats.byType.check_out,
+      checkIn: stats.byType.check_in,
+      repair: stats.byType.repair || 0,
+      lost: stats.byType.lost || 0,
+      maintenance: stats.byType.maintenance,
+      transfer: stats.byType.transfer
+    };
   }
 }));

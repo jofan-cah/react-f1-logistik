@@ -12,6 +12,7 @@ import Badge from '../../components/ui/Badge';
 import DeleteConfirmationModal from '../../components/ui/DeleteConfirmationModal';
 import TabsComponent from '../../components/ui/TabsComponent';
 import TransactionHistoryTable from '../../components/tables/TransactionHistoryTable';
+import ProductStockTab from '../../components/ProductStockTab'; // NEW IMPORT
 import { useProductStore } from '../../store/useProductStore';
 import { Product } from '../../types/product.types';
 
@@ -161,9 +162,10 @@ const ProductDetail: React.FC = () => {
     return product.Supplier?.name || product.supplierName || '-';
   };
 
-  // Tabs configuration
+  // UPDATED: Tabs configuration with new Stock tab
   const tabs = [
     { id: 'details', label: 'Details' },
+   
     { id: 'maintenance', label: 'Maintenance' },
     { id: 'transactions', label: 'Transaction History' },
   ];
@@ -522,6 +524,8 @@ const ProductDetail: React.FC = () => {
                 </div>
               </div>
             )}
+
+         
 
             {/* Maintenance Tab */}
             {activeTab === 'maintenance' && (

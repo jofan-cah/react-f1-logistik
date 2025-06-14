@@ -52,16 +52,18 @@ const ProductsList: React.FC = () => {
     deleteProduct,
     setFilters,
     setCurrentPage,
-    clearError
+    clearError,
+    getProductsForPrint // UPDATED: Use the store method for print
   } = useProductStore();
 
   const [searchTerm, setSearchTerm] = useState<string>(filters.search || '');
   const [filterStatus, setFilterStatus] = useState<string>(filters.status || 'all');
+  const [filterCondition, setFilterCondition] = useState<string>(filters.condition || 'all');
   const [filterDateRange, setFilterDateRange] = useState<string>('all');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   
-  // MODIFIED: QR Label printing states
+  // QR Label printing states
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [showBulkQRModal, setShowBulkQRModal] = useState<boolean>(false);
   const [selectedProductsForQR, setSelectedProductsForQR] = useState<Product[]>([]);
@@ -70,8 +72,11 @@ const ProductsList: React.FC = () => {
   // Debounce search term
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
-  // Product statuses
-  const statuses = ['Available', 'In Use', 'Under Maintenance', 'Retired', 'Lost', 'Checked Out'];
+  // UPDATED: Product statuses to match backend
+  const statuses = ['Available', 'In Use', 'Maintenance', 'Damaged', 'Disposed'];
+
+  // UPDATED: Product conditions to match backend
+  const conditions = ['New', 'Good', 'Fair', 'Poor', 'Damaged'];
 
   // Date range options for filtering new products
   const dateRangeOptions = [
@@ -85,7 +90,7 @@ const ProductsList: React.FC = () => {
   // Load products on component mount
   useEffect(() => {
     fetchProducts();
-  }, []);
+  }, [fetchProducts]);
 
   // Update filters when debounced search term changes
   useEffect(() => {
@@ -98,7 +103,7 @@ const ProductsList: React.FC = () => {
     if (debouncedSearchTerm !== (filters.search || '')) {
       setFilters(newFilters);
     }
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, filters, setFilters]);
 
   // Handle status filter change
   const handleStatusFilterChange = (status: string) => {
@@ -106,6 +111,16 @@ const ProductsList: React.FC = () => {
     const newFilters = {
       ...filters,
       status: status === 'all' ? undefined : status
+    };
+    setFilters(newFilters);
+  };
+
+  // ADDED: Handle condition filter change
+  const handleConditionFilterChange = (condition: string) => {
+    setFilterCondition(condition);
+    const newFilters = {
+      ...filters,
+      condition: condition === 'all' ? undefined : condition
     };
     setFilters(newFilters);
   };
@@ -165,7 +180,7 @@ const ProductsList: React.FC = () => {
     }
   };
 
-  // MODIFIED: QR Label printing functions
+  // QR Label printing functions
   const handleSelectProduct = (productId: string) => {
     const newSelected = new Set(selectedProducts);
     if (newSelected.has(productId)) {
@@ -189,13 +204,18 @@ const ProductsList: React.FC = () => {
     setIsSelectMode(false);
   };
 
-  // MODIFIED: Open BulkQRGenerator directly when Print QR button clicked
-  const handlePrintQRClick = () => {
+  // UPDATED: Use store method for getting print data
+  const handlePrintQRClick = async () => {
     if (selectedProducts.size === 0) {
       alert('Please select at least one product');
       return;
     }
 
+    // Get products for print using store method
+    const productIds = Array.from(selectedProducts);
+    await getProductsForPrint(productIds);
+    
+    // Get the selected products data for QR generator
     const selectedProductData = products.filter(p => selectedProducts.has(p.product_id));
     setSelectedProductsForQR(selectedProductData);
     setShowBulkQRModal(true);
@@ -243,20 +263,19 @@ const ProductsList: React.FC = () => {
     return diffDays <= 7;
   };
 
-  // Get status badge type
+  // UPDATED: Get status badge type to match backend statuses
   const getStatusBadgeType = (status: string) => {
     switch (status) {
       case 'Available':
         return 'success';
       case 'In Use':
-      case 'Checked Out':
         return 'primary';
-      case 'Under Maintenance':
+      case 'Maintenance':
         return 'warning';
-      case 'Retired':
-        return 'gray';
-      case 'Lost':
+      case 'Damaged':
         return 'danger';
+      case 'Disposed':
+        return 'gray';
       default:
         return 'gray';
     }
@@ -399,7 +418,7 @@ const ProductsList: React.FC = () => {
             ))}
           </select>
 
-          {/* Status Filter */}
+          {/* Status Filter - UPDATED */}
           <select
             className="pl-3 pr-10 py-2 border border-gray-300 dark:border-gray-600 
                   bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 
@@ -413,6 +432,23 @@ const ProductsList: React.FC = () => {
             <option value="all">All Statuses</option>
             {statuses.map(status => (
               <option key={status} value={status}>{status}</option>
+            ))}
+          </select>
+
+          {/* ADDED: Condition Filter */}
+          <select
+            className="pl-3 pr-10 py-2 border border-gray-300 dark:border-gray-600 
+                  bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 
+                  rounded-md focus:outline-none focus:ring-2 
+                focus:ring-indigo-500 dark:focus:ring-indigo-400 
+                  focus:border-indigo-500 dark:focus:border-indigo-400
+                  transition-colors duration-200"
+            value={filterCondition}
+            onChange={(e) => handleConditionFilterChange(e.target.value)}
+          >
+            <option value="all">All Conditions</option>
+            {conditions.map(condition => (
+              <option key={condition} value={condition}>{condition}</option>
             ))}
           </select>
 
@@ -523,7 +559,9 @@ const ProductsList: React.FC = () => {
                         <div>
                           <div className="flex items-center">
                             <span className="text-sm font-medium text-gray-900 dark:text-gray-200">
-                              {product.name}
+                              {/* UPDATED: Show brand/model if no name field from backend */}
+                              {product.brand || product.product_id}
+                              {product.model && ` ${product.model}`}
                             </span>
                             {isRecentlyAdded(product.created_at) && (
                               <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
@@ -540,7 +578,10 @@ const ProductsList: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 dark:text-gray-200">{product.Category?.name || '-'}</div>
+                      {/* UPDATED: Handle both category and Category naming */}
+                      <div className="text-sm text-gray-900 dark:text-gray-200">
+                        {product.category?.name || product.Category?.name || '-'}
+                      </div>
                       {product.brand && (
                         <div className="text-sm text-gray-500 dark:text-gray-400">
                           {product.brand} {product.model && `/ ${product.model}`}
@@ -561,7 +602,7 @@ const ProductsList: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900 dark:text-gray-200">{formatCurrency(product.purchase_price)}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{formatDate(product.purchase_date || '')}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{formatDate(product.purchase_date)}</div>
                     </td>
                     {!isSelectMode && (
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -626,7 +667,7 @@ const ProductsList: React.FC = () => {
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDelete}
         title="Delete Product"
-        message={`Are you sure you want to delete "${selectedProduct?.name}"? This action cannot be undone.`}
+        message={`Are you sure you want to delete "${selectedProduct?.brand || selectedProduct?.product_id}"? This action cannot be undone.`}
         isLoading={isLoading}
       />
     </div>

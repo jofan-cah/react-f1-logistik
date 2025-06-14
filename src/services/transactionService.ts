@@ -9,11 +9,12 @@ import {
   TransactionListResponse,
   TransactionResponse,
   TransactionItemsResponse,
+  TransactionStats,
   ApiResponse
 } from '../types/transaction.types';
 
 export const transactionService = {
-  // Get all transactions with filtering
+  // Get all transactions with filtering (matches backend pagination response)
   async getTransactions(params: TransactionQueryParams = {}): Promise<TransactionListResponse> {
     try {
       console.log('TransactionService - Getting transactions with params:', params);
@@ -21,13 +22,15 @@ export const transactionService = {
       // Build query string
       const queryParams = new URLSearchParams();
       
+      if (params.page) queryParams.append('page', params.page.toString());
+      if (params.limit) queryParams.append('limit', params.limit.toString());
       if (params.transaction_type) queryParams.append('transaction_type', params.transaction_type);
       if (params.status) queryParams.append('status', params.status);
       if (params.start_date) queryParams.append('start_date', params.start_date);
       if (params.end_date) queryParams.append('end_date', params.end_date);
       if (params.search) queryParams.append('search', params.search);
-      if (params.page) queryParams.append('page', params.page.toString());
-      if (params.limit) queryParams.append('limit', params.limit.toString());
+      if (params.location) queryParams.append('location', params.location);
+      if (params.created_by) queryParams.append('created_by', params.created_by);
       if (params.sort_by) queryParams.append('sort_by', params.sort_by);
       if (params.sort_order) queryParams.append('sort_order', params.sort_order);
       
@@ -35,15 +38,16 @@ export const transactionService = {
       const url = `/transactions${queryString ? `?${queryString}` : ''}`;
       
       const response = await api.get(url);
-      
       console.log('TransactionService - Response:', response.data);
       
+      // Backend returns paginated response
       if (response.data.success) {
         return {
           success: true,
-          count: response.data.count || response.data.data?.length || 0,
+          count: response.data.total || response.data.data?.length || 0,
           data: response.data.data || [],
-          message: response.data.message
+          message: response.data.message,
+          meta: response.data.meta
         };
       } else {
         throw new Error(response.data.message || 'Failed to fetch transactions');
@@ -76,41 +80,24 @@ export const transactionService = {
     }
   },
 
-  // Get transaction items
-  async getTransactionItems(transactionId: number): Promise<TransactionItemsResponse> {
-    try {
-      console.log('TransactionService - Getting transaction items for ID:', transactionId);
-      
-      const response = await api.get(`/transactions/${transactionId}/items`);
-      
-      if (response.data.success) {
-        return {
-          success: true,
-          count: response.data.count || response.data.data?.length || 0,
-          data: response.data.data || [],
-          message: response.data.message
-        };
-      } else {
-        throw new Error(response.data.message || 'Failed to fetch transaction items');
-      }
-    } catch (error: any) {
-      console.error('TransactionService - Error getting transaction items:', error);
-      throw error;
-    }
-  },
-
-  // Create new transaction
+  // Create new transaction (matches backend validation)
   async createTransaction(data: CreateTransactionRequest): Promise<TransactionResponse> {
     try {
       console.log('TransactionService - Creating transaction:', data);
       
-      // Validate required fields
+      // Frontend validation before sending to backend
       if (!data.transaction_type || !data.first_person || !data.location) {
         throw new Error('Transaction type, first person, and location are required');
       }
       
       if (!data.items || data.items.length === 0) {
         throw new Error('At least one item is required');
+      }
+      
+      // Validate transaction type matches backend
+      const validTypes = ['check_out', 'check_in', 'transfer', 'maintenance', 'repair', 'lost'];
+      if (!validTypes.includes(data.transaction_type)) {
+        throw new Error('Invalid transaction type');
       }
       
       // Validate items
@@ -180,12 +167,22 @@ export const transactionService = {
     }
   },
 
-  // Close transaction (update status to closed)
+  // Close transaction (backend endpoint)
   async closeTransaction(id: number): Promise<TransactionResponse> {
     try {
       console.log('TransactionService - Closing transaction:', id);
       
-      return await this.updateTransaction(id, { status: 'closed' });
+      const response = await api.put(`/transactions/${id}/close`);
+      
+      if (response.data.success) {
+        return {
+          success: true,
+          data: response.data.data,
+          message: response.data.message || 'Transaction closed successfully'
+        };
+      } else {
+        throw new Error(response.data.message || 'Failed to close transaction');
+      }
     } catch (error: any) {
       console.error('TransactionService - Error closing transaction:', error);
       throw error;
@@ -204,64 +201,75 @@ export const transactionService = {
     }
   },
 
-  // Get transaction statistics
-  async getTransactionStats(
-    startDate?: string,
-    endDate?: string
-  ): Promise<ApiResponse<{
-    total: number;
-    byType: Record<string, number>;
-    byStatus: Record<string, number>;
-    byMonth: Record<string, number>;
-    recentActivity: Transaction[];
-  }>> {
+  // Add item to transaction (backend endpoint)
+  async addTransactionItem(
+    transactionId: number, 
+    itemData: {
+      product_id: string;
+      condition_before?: string;
+      condition_after?: string;
+      quantity?: number;
+      breakdown_quantity?: number;
+      breakdown_unit?: string;
+      notes?: string;
+    }
+  ): Promise<ApiResponse<TransactionItem>> {
     try {
-      console.log('TransactionService - Getting transaction stats');
+      console.log('TransactionService - Adding item to transaction:', { transactionId, itemData });
       
-      // Get all transactions for statistics
-      const response = await this.getTransactions({
-        start_date: startDate,
-        end_date: endDate,
-        limit: 1000 // Get a large number for stats
-      });
+      const response = await api.post(`/transactions/${transactionId}/items`, itemData);
       
-      if (response.success && response.data) {
-        const transactions = response.data;
-        
-        const stats = {
-          total: transactions.length,
-          byType: {} as Record<string, number>,
-          byStatus: {} as Record<string, number>,
-          byMonth: {} as Record<string, number>,
-          recentActivity: transactions.slice(0, 10) // Last 10 transactions
-        };
-        
-        // Count by type
-        transactions.forEach(transaction => {
-          stats.byType[transaction.transaction_type] = 
-            (stats.byType[transaction.transaction_type] || 0) + 1;
-        });
-        
-        // Count by status
-        transactions.forEach(transaction => {
-          stats.byStatus[transaction.status] = 
-            (stats.byStatus[transaction.status] || 0) + 1;
-        });
-        
-        // Count by month
-        transactions.forEach(transaction => {
-          const date = new Date(transaction.transaction_date || transaction.created_at || '');
-          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          stats.byMonth[monthKey] = (stats.byMonth[monthKey] || 0) + 1;
-        });
-        
+      if (response.data.success) {
         return {
           success: true,
-          data: stats,
-          message: 'Transaction statistics calculated successfully'
+          data: response.data.data,
+          message: response.data.message || 'Item added successfully'
         };
       } else {
-        throw new Error('Failed to fetch transactions for statistics');
+        throw new Error(response.data.message || 'Failed to add item');
+      }
+    } catch (error: any) {
+      console.error('TransactionService - Error adding transaction item:', error);
+      throw error;
+    }
+  },
+
+  // Remove item from transaction (backend endpoint)
+  async removeTransactionItem(transactionId: number, itemId: number): Promise<ApiResponse<null>> {
+    try {
+      console.log('TransactionService - Removing item from transaction:', { transactionId, itemId });
+      
+      const response = await api.delete(`/transactions/${transactionId}/items/${itemId}`);
+      
+      if (response.data.success) {
+        return {
+          success: true,
+          message: response.data.message || 'Item removed successfully'
+        };
+      } else {
+        throw new Error(response.data.message || 'Failed to remove item');
+      }
+    } catch (error: any) {
+      console.error('TransactionService - Error removing transaction item:', error);
+      throw error;
+    }
+  },
+
+  // Get transaction statistics (backend endpoint)
+  async getTransactionStats(): Promise<ApiResponse<TransactionStats>> {
+    try {
+      console.log('TransactionService - Getting transaction stats from backend');
+      
+      const response = await api.get('/transactions/stats');
+      
+      if (response.data.success && response.data.data) {
+        return {
+          success: true,
+          data: response.data.data,
+          message: response.data.message || 'Statistics retrieved successfully'
+        };
+      } else {
+        throw new Error(response.data.message || 'Failed to fetch statistics');
       }
     } catch (error: any) {
       console.error('TransactionService - Error getting transaction stats:', error);
@@ -269,25 +277,31 @@ export const transactionService = {
     }
   },
 
-  // Export transactions
-  async exportTransactions(params: TransactionQueryParams & { format?: 'csv' | 'excel' | 'pdf' }): Promise<Blob> {
+  // Generate QR code for transaction (backend endpoint)
+  async generateTransactionQRCode(id: number): Promise<ApiResponse<{
+    transaction_id: number;
+    qr_code: {
+      filename: string;
+      url: string;
+      data: string;
+    };
+  }>> {
     try {
-      console.log('TransactionService - Exporting transactions:', params);
+      console.log('TransactionService - Generating QR code for transaction:', id);
       
-      const queryParams = new URLSearchParams();
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          queryParams.append(key, value.toString());
-        }
-      });
+      const response = await api.post(`/transactions/${id}/qr-code`);
       
-      const response = await api.get(`/transactions/export?${queryParams.toString()}`, {
-        responseType: 'blob'
-      });
-      
-      return response.data;
+      if (response.data.success) {
+        return {
+          success: true,
+          data: response.data.data,
+          message: response.data.message || 'QR code generated successfully'
+        };
+      } else {
+        throw new Error(response.data.message || 'Failed to generate QR code');
+      }
     } catch (error: any) {
-      console.error('TransactionService - Error exporting transactions:', error);
+      console.error('TransactionService - Error generating QR code:', error);
       throw error;
     }
   },
@@ -307,5 +321,103 @@ export const transactionService = {
       console.error('TransactionService - Error searching transactions:', error);
       throw error;
     }
+  },
+
+  // Utility function to validate transaction data
+  validateTransactionData(data: CreateTransactionRequest): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    
+    // Validate transaction type
+    const validTypes = ['check_out', 'check_in', 'transfer', 'maintenance', 'repair', 'lost'];
+    if (!validTypes.includes(data.transaction_type)) {
+      errors.push('Invalid transaction type');
+    }
+    
+    // Validate required fields
+    if (!data.first_person || data.first_person.length < 2 || data.first_person.length > 100) {
+      errors.push('First person must be between 2 and 100 characters');
+    }
+    
+    if (!data.location || data.location.length < 2 || data.location.length > 100) {
+      errors.push('Location must be between 2 and 100 characters');
+    }
+    
+    if (data.second_person && data.second_person.length > 100) {
+      errors.push('Second person cannot exceed 100 characters');
+    }
+    
+    if (data.notes && data.notes.length > 1000) {
+      errors.push('Notes cannot exceed 1000 characters');
+    }
+    
+    // Validate items
+    if (!data.items || data.items.length === 0) {
+      errors.push('At least one item is required');
+    } else {
+      data.items.forEach((item, index) => {
+        if (!item.product_id) {
+          errors.push(`Item ${index + 1}: Product ID is required`);
+        }
+        
+        if (item.quantity && item.quantity < 1) {
+          errors.push(`Item ${index + 1}: Quantity must be a positive integer`);
+        }
+        
+        if (item.notes && item.notes.length > 500) {
+          errors.push(`Item ${index + 1}: Notes cannot exceed 500 characters`);
+        }
+        
+        // Validate conditions
+        const validConditions = ['New', 'Good', 'Fair', 'Poor', 'Damaged'];
+        if (item.condition_before && !validConditions.includes(item.condition_before)) {
+          errors.push(`Item ${index + 1}: Invalid condition before`);
+        }
+        
+        if (item.condition_after && !validConditions.includes(item.condition_after)) {
+          errors.push(`Item ${index + 1}: Invalid condition after`);
+        }
+      });
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  },
+
+  // Utility function to format transaction type
+  formatTransactionType(type: string): string {
+    const typeMap: { [key: string]: string } = {
+      'check_out': 'Check Out',
+      'check_in': 'Check In',
+      'transfer': 'Transfer',
+      'maintenance': 'Maintenance',
+      'repair': 'Repair',
+      'lost': 'Lost'
+    };
+    return typeMap[type] || type;
+  },
+
+  // Utility function to get transaction type color
+  getTransactionTypeColor(type: string): string {
+    const colorMap: { [key: string]: string } = {
+      'check_out': 'text-green-600',
+      'check_in': 'text-blue-600',
+      'transfer': 'text-purple-600',
+      'maintenance': 'text-orange-600',
+      'repair': 'text-yellow-600',
+      'lost': 'text-red-600'
+    };
+    return colorMap[type] || 'text-gray-600';
+  },
+
+  // Utility function to get status color
+  getStatusColor(status: string): string {
+    const colorMap: { [key: string]: string } = {
+      'open': 'text-green-600',
+      'closed': 'text-gray-600',
+      'pending': 'text-yellow-600'
+    };
+    return colorMap[status] || 'text-gray-600';
   }
 };

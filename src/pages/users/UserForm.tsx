@@ -41,6 +41,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
   } = useUserStore();
 
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [userLevelsLoaded, setUserLevelsLoaded] = useState(false);
   const [formInitialized, setFormInitialized] = useState(false);
   
@@ -49,7 +50,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
     full_name: '',
     email: '',
     phone: '',
-    user_level_id: '',
+    user_level_id: 'viewer', // Default to viewer as per backend validation
     department: '',
     is_active: true,
     notes: ''
@@ -59,8 +60,14 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  // Debug state
-  const [debugInfo, setDebugInfo] = useState<any>({});
+  // Available user levels (hardcoded to match backend validation)
+  const availableUserLevels = [
+    { id: 'admin', level_name: 'Administrator' },
+    { id: 'manager', level_name: 'Manager' },
+    { id: 'technician', level_name: 'Technician' },
+    { id: 'warehouse', level_name: 'Warehouse' },
+    { id: 'viewer', level_name: 'Viewer' }
+  ];
 
   // Load user levels first
   useEffect(() => {
@@ -69,9 +76,11 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
         console.log('🔄 Loading user levels...');
         await fetchUserLevels();
         setUserLevelsLoaded(true);
-        console.log('✅ User levels loaded:', userLevels);
+        console.log('✅ User levels loaded');
       } catch (error) {
         console.error('❌ Failed to load user levels:', error);
+        // Use fallback levels if API fails
+        setUserLevelsLoaded(true);
       }
     };
 
@@ -80,23 +89,17 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
 
   // Initialize form after user levels are loaded
   useEffect(() => {
-    if (userLevelsLoaded && userLevels.length > 0 && !formInitialized) {
-      console.log('🚀 Initializing form with user levels:', userLevels);
+    if (userLevelsLoaded && !formInitialized) {
+      console.log('🚀 Initializing form...');
       
       if (mode === 'create') {
-        // Use the first available user level as default
-        const defaultLevel = userLevels.find(level => 
-          level.id === 'staff' || level.level_name.toLowerCase().includes('staff')
-        ) || userLevels[0];
-        
-        console.log('📝 Setting default user level:', defaultLevel);
-        
+        // Set default values for create mode
         setFormData({
           username: '',
           full_name: '',
           email: '',
           phone: '',
-          user_level_id: defaultLevel.id,
+          user_level_id: 'viewer', // Default as per backend
           department: '',
           is_active: true,
           notes: ''
@@ -104,23 +107,18 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
         
         clearCurrentUser();
         setFormInitialized(true);
+        console.log('✅ Create form initialized');
       } else if (mode === 'edit' && id) {
         console.log('📝 Edit mode - Loading user with ID:', id);
         loadUser();
       }
     }
-  }, [userLevelsLoaded, userLevels, mode, id, formInitialized]);
+  }, [userLevelsLoaded, mode, id, formInitialized]);
 
   // Update form when currentUser is loaded (edit mode)
   useEffect(() => {
     if (currentUser && mode === 'edit' && userLevelsLoaded) {
       console.log('📝 Populating form with user data:', currentUser);
-      
-      // Verify user level exists in available levels
-      const userLevelExists = userLevels.find(level => level.id === currentUser.user_level_id);
-      if (!userLevelExists) {
-        console.warn('⚠️ User level not found in available levels:', currentUser.user_level_id);
-      }
       
       setFormData({
         username: currentUser.username,
@@ -134,25 +132,9 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
       });
       
       setFormInitialized(true);
+      console.log('✅ Edit form populated');
     }
-  }, [currentUser, mode, userLevelsLoaded, userLevels]);
-
-  // Update debug info
-  useEffect(() => {
-    setDebugInfo({
-      mode,
-      id,
-      userLevelsLoaded,
-      userLevelsCount: userLevels.length,
-      availableUserLevels: userLevels.map(level => ({ id: level.id, level_name: level.level_name })),
-      selectedUserLevelId: formData.user_level_id,
-      selectedUserLevelExists: userLevels.find(level => level.id === formData.user_level_id),
-      formInitialized,
-      currentUser: currentUser ? { id: currentUser.id, username: currentUser.username } : null,
-      isLoading,
-      error
-    });
-  }, [mode, id, userLevelsLoaded, userLevels, formData.user_level_id, formInitialized, currentUser, isLoading, error]);
+  }, [currentUser, mode, userLevelsLoaded]);
 
   const loadUser = async () => {
     if (!id) {
@@ -176,38 +158,62 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
+    // Username validation
     if (!formData.username?.trim()) {
       errors.username = 'Username is required';
+    } else if (formData.username.length < 3 || formData.username.length > 50) {
+      errors.username = 'Username must be between 3 and 50 characters';
+    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+      errors.username = 'Username can only contain letters, numbers, and underscores';
     }
 
-    if (mode === 'create' && !password.trim()) {
-      errors.password = 'Password is required';
+    // Password validation (only for create mode)
+    if (mode === 'create') {
+      if (!password.trim()) {
+        errors.password = 'Password is required';
+      } else if (password.length < 6) {
+        errors.password = 'Password must be at least 6 characters';
+      } else if (!/^(?=.*[a-zA-Z])(?=.*\d)/.test(password)) {
+        errors.password = 'Password must contain at least one letter and one number';
+      }
+
+      if (password !== confirmPassword) {
+        errors.confirmPassword = 'Password confirmation does not match';
+      }
     }
 
-    if (mode === 'create' && password && password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
-    }
-
-    if (mode === 'create' && password !== confirmPassword) {
-      errors.confirmPassword = 'Password confirmation does not match';
-    }
-
+    // Full name validation
     if (!formData.full_name?.trim()) {
       errors.full_name = 'Full name is required';
+    } else if (formData.full_name.length < 2 || formData.full_name.length > 100) {
+      errors.full_name = 'Full name must be between 2 and 100 characters';
     }
 
+    // Email validation (optional but must be valid if provided)
     if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
       errors.email = 'Invalid email format';
     }
 
+    // Phone validation (optional but length check if provided)
+    if (formData.phone && formData.phone.length > 20) {
+      errors.phone = 'Phone cannot exceed 20 characters';
+    }
+
+    // User level validation
     if (!formData.user_level_id) {
       errors.user_level_id = 'User level is required';
-    } else {
-      // Check if selected user level exists
-      const levelExists = userLevels.find(level => level.id === formData.user_level_id);
-      if (!levelExists) {
-        errors.user_level_id = `Selected user level "${formData.user_level_id}" does not exist`;
-      }
+    } else if (!['admin', 'manager', 'technician', 'warehouse', 'viewer'].includes(formData.user_level_id)) {
+      errors.user_level_id = 'Invalid user level selected';
+    }
+
+    // Department validation (optional but length check if provided)
+    if (formData.department && formData.department.length > 100) {
+      errors.department = 'Department cannot exceed 100 characters';
+    }
+
+    // Notes validation (optional but length check if provided)
+    if (formData.notes && formData.notes.length > 1000) {
+      errors.notes = 'Notes cannot exceed 1000 characters';
     }
 
     setValidationErrors(errors);
@@ -241,11 +247,10 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
         const createData: CreateUserRequest = {
           username: formData.username!,
           password: password,
-          confirm_password: confirmPassword,
           full_name: formData.full_name!,
           email: formData.email || undefined,
           phone: formData.phone || undefined,
-          user_level_id: formData.user_level_id!,
+          user_level_id: formData.user_level_id as any,
           department: formData.department || undefined,
           is_active: formData.is_active,
           notes: formData.notes || undefined
@@ -266,7 +271,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
           full_name: formData.full_name!,
           email: formData.email || undefined,
           phone: formData.phone || undefined,
-          user_level_id: formData.user_level_id!,
+          user_level_id: formData.user_level_id as any,
           department: formData.department || undefined,
           is_active: formData.is_active,
           notes: formData.notes || undefined
@@ -287,6 +292,9 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
     }
   };
 
+  // Get user levels to display (prefer from API, fallback to hardcoded)
+  const displayUserLevels = userLevels.length > 0 ? userLevels : availableUserLevels;
+
   if (isLoading && (mode === 'edit' || !userLevelsLoaded)) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
@@ -295,37 +303,6 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             {mode === 'edit' ? 'Loading user data...' : 'Loading user levels...'}
           </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!userLevelsLoaded || userLevels.length === 0) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
-        <div className="text-center max-w-md">
-          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-            User Levels Required
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">
-            No user levels are available. Please create user levels first before adding users.
-          </p>
-          <div className="space-y-2">
-            <button
-              onClick={() => fetchUserLevels()}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry Loading
-            </button>
-            <button
-              onClick={() => navigate('/users')}
-              className="block w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-            >
-              Go Back
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -349,7 +326,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
               </h1>
               {currentUser?.id && mode === 'edit' && (
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {currentUser.id}
+                  ID: {currentUser.id}
                 </span>
               )}
             </div>
@@ -358,8 +335,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      
-        <div onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main Form */}
             <div className="lg:col-span-2">
@@ -379,7 +355,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                         type="text"
                         value={formData.username || ''}
                         onChange={(e) => handleInputChange('username', e.target.value)}
-                        placeholder="Enter username"
+                        placeholder="Enter username (letters, numbers, underscore only)"
                         className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
                           validationErrors.username ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                         }`}
@@ -405,7 +381,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                                   setValidationErrors(prev => ({ ...prev, password: '' }));
                                 }
                               }}
-                              placeholder="Enter password"
+                              placeholder="Min 6 chars, letter + number"
                               className={`w-full px-3 py-2 pr-10 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
                                 validationErrors.password ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                               }`}
@@ -427,20 +403,29 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Confirm Password *
                           </label>
-                          <input
-                            type="password"
-                            value={confirmPassword}
-                            onChange={(e) => {
-                              setConfirmPassword(e.target.value);
-                              if (validationErrors.confirmPassword) {
-                                setValidationErrors(prev => ({ ...prev, confirmPassword: '' }));
-                              }
-                            }}
-                            placeholder="Confirm password"
-                            className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
-                              validationErrors.confirmPassword ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                            }`}
-                          />
+                          <div className="relative">
+                            <input
+                              type={showConfirmPassword ? 'text' : 'password'}
+                              value={confirmPassword}
+                              onChange={(e) => {
+                                setConfirmPassword(e.target.value);
+                                if (validationErrors.confirmPassword) {
+                                  setValidationErrors(prev => ({ ...prev, confirmPassword: '' }));
+                                }
+                              }}
+                              placeholder="Confirm password"
+                              className={`w-full px-3 py-2 pr-10 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
+                                validationErrors.confirmPassword ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+                            >
+                              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
                           {validationErrors.confirmPassword && (
                             <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.confirmPassword}</p>
                           )}
@@ -495,8 +480,13 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                         value={formData.phone || ''}
                         onChange={(e) => handleInputChange('phone', e.target.value)}
                         placeholder="Enter phone number"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
+                          validationErrors.phone ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                        }`}
                       />
+                      {validationErrors.phone && (
+                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.phone}</p>
+                      )}
                     </div>
 
                     <div>
@@ -512,16 +502,15 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                         }`}
                       >
                         <option value="">Select user level</option>
-                        {userLevels.map(level => (
+                        {displayUserLevels.map(level => (
                           <option key={level.id} value={level.id}>
-                            {level.level_name} 
+                            {level.level_name}
                           </option>
                         ))}
                       </select>
                       {validationErrors.user_level_id && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.user_level_id}</p>
                       )}
-                  
                     </div>
 
                     <div>
@@ -534,8 +523,13 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                         value={formData.department || ''}
                         onChange={(e) => handleInputChange('department', e.target.value)}
                         placeholder="Enter department"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
+                          validationErrors.department ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                        }`}
                       />
+                      {validationErrors.department && (
+                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.department}</p>
+                      )}
                     </div>
 
                     <div className="md:col-span-2">
@@ -547,8 +541,13 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                         onChange={(e) => handleInputChange('notes', e.target.value)}
                         rows={3}
                         placeholder="Additional notes about the user..."
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
+                          validationErrors.notes ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                        }`}
                       />
+                      {validationErrors.notes && (
+                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.notes}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -582,7 +581,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
 
                   <div className="mt-6 space-y-3">
                     <button
-                      onClick={handleSubmit}
+                      type="submit"
                       disabled={isLoading || !formInitialized}
                       className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                     >
@@ -591,6 +590,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => navigate('/users')}
                       className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
                     >
@@ -612,6 +612,7 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                       </div>
                       <div className="mt-4">
                         <button
+                          type="button"
                           onClick={clearError}
                           className="text-sm font-medium text-red-800 dark:text-red-300 hover:text-red-900 dark:hover:text-red-200 transition-colors duration-200"
                         >
@@ -622,9 +623,27 @@ const UserForm: React.FC<UserFormProps> = ({ mode }) => {
                   </div>
                 </div>
               )}
+
+              {/* Debug Info (only in development) */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mt-6">
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Debug Info</h3>
+                  <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                    <div>Mode: {mode}</div>
+                    <div>ID: {id || 'none'}</div>
+                    <div>Form Initialized: {formInitialized ? 'Yes' : 'No'}</div>
+                    <div>User Levels Loaded: {userLevelsLoaded ? 'Yes' : 'No'}</div>
+                    <div>Available Levels: {displayUserLevels.length}</div>
+                    <div>Selected Level: {formData.user_level_id || 'none'}</div>
+                    <div>Current User: {currentUser ? currentUser.username : 'none'}</div>
+                    <div>Loading: {isLoading ? 'Yes' : 'No'}</div>
+                    <div>Error: {error || 'none'}</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );

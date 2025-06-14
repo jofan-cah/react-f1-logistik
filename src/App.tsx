@@ -1,4 +1,4 @@
-// src/App.tsx
+// src/App.tsx - ADD NEW LAZY IMPORTS
 import React, { Suspense, lazy, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -23,23 +23,38 @@ const Supplier = lazy(() => import('./pages/suppliers/SuppliersList'));
 const SupplierDetail = lazy(() => import('./pages/suppliers/SupplierDetail'));
 const SupplierForm = lazy(() => import('./pages/suppliers/SupplierForm'));
 
-// Transactions - FIXED IMPORTS
+// Purchasing
+const PurchasingList = lazy(() => import('./pages/purchasing/PurchasingList'));
+const PurchasingDetail = lazy(() => import('./pages/purchasing/PurchasingDetail'));
+const PurchasingForm = lazy(() => import('./pages/purchasing/PurchasingForm'));
+
+// Pengadaan
+const PengadaanList = lazy(() => import('./pages/pengadaan/PengadaanList'));
+
+// Transactions - EXISTING
 const TransactionsList = lazy(() => import('./pages/transactions/TransactionsList'));
 const TransactionDetail = lazy(() => import('./pages/transactions/TransactionDetail'));
 const TransactionForm = lazy(() => import('./pages/transactions/TransactionForm'));
 const Scanner = lazy(() => import('./pages/transactions/Scanner'));
+
+// Transactions - NEW DEDICATED PAGES
+const CheckOut = lazy(() => import('./pages/transactions/CheckOut'));
+const CheckIn = lazy(() => import('./pages/transactions/CheckIn'));
+const Repair = lazy(() => import('./pages/transactions/Repair'));
+const Lost = lazy(() => import('./pages/transactions/Lost'));
+const TransactionHistory = lazy(() => import('./pages/transactions/TransactionHistory'));
 
 // Product
 const ProductsList = lazy(() => import('./pages/products/ProductsList'));
 const ProductForm = lazy(() => import('./pages/products/ProductForm'));
 const ProductDetail = lazy(() => import('./pages/products/ProductDetail'));
 
-// Users - FIXED IMPORT PATHS
+// Users
 const UsersList = lazy(() => import('./pages/users/UsersList'));
 const UsersForm = lazy(() => import('./pages/users/UserForm'));
 const UsersDetail = lazy(() => import('./pages/users/UserDetail'));
 
-// User Levels - NEW IMPORT
+// User Levels
 const UserLevels = lazy(() => import('./pages/user-levels/UserLevels'));
 
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -67,7 +82,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     console.log('ProtectedRoute - Not authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
-  
+
   console.log('ProtectedRoute - Authenticated, rendering children');
   return <>{children}</>;
 };
@@ -87,7 +102,7 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
     console.log('PublicRoute - Already authenticated, redirecting to dashboard');
     return <Navigate to="/dashboard" replace />;
   }
-  
+
   console.log('PublicRoute - Not authenticated, showing login');
   return <>{children}</>;
 };
@@ -98,13 +113,13 @@ const AppRoutes: React.FC = () => {
     <Suspense fallback={<LoadingFallback />}>
       <Routes>
         {/* Public routes */}
-        <Route 
-          path="/login" 
+        <Route
+          path="/login"
           element={
             <PublicRoute>
               <Login />
             </PublicRoute>
-          } 
+          }
         />
 
         {/* Protected routes with MainLayout */}
@@ -115,25 +130,41 @@ const AppRoutes: React.FC = () => {
         }>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          
+
           {/* Categories */}
           <Route path="categories" element={<Category />} />
           <Route path="categories/create" element={<CategoryForm />} />
           <Route path="categories/:id" element={<CategoryDetail />} />
           <Route path="categories/edit/:id" element={<CategoryForm />} />
-          
+
           {/* Suppliers */}
           <Route path="suppliers" element={<Supplier />} />
           <Route path="suppliers/create" element={<SupplierForm />} />
           <Route path="suppliers/:id" element={<SupplierDetail />} />
           <Route path="suppliers/edit/:id" element={<SupplierForm />} />
 
-          {/* Transactions - FIXED ROUTES */}
-          <Route path="transactions" element={<TransactionsList />} />
+          {/* Purchasing */}
+          <Route path="purchasing" element={<PurchasingList />} />
+          <Route path="purchasing/create" element={<PurchasingForm mode="create" />} />
+          <Route path="purchasing/edit/:id" element={<PurchasingForm mode="edit" />} />
+          <Route path="purchasing/:id" element={<PurchasingDetail />} />
+
+          {/* Pengadaan */}
+          <Route path="pengadaan" element={<PengadaanList />} />
+
+          {/* Transactions - NEW DEDICATED ROUTES */}
+          <Route path="transactions" element={<TransactionHistory />} /> {/* Default to history */}
+          <Route path="transactions/check-out" element={<CheckOut />} />
+          <Route path="transactions/check-in" element={<CheckIn />} />
+          <Route path="transactions/repair" element={<Repair />} />
+          <Route path="transactions/lost" element={<Lost />} />
+          <Route path="transactions/history" element={<TransactionHistory />} />
+          
+          {/* Transactions - EXISTING ROUTES (keep for backward compatibility) */}
           <Route path="transactions/new" element={<TransactionForm mode="create" />} />
           <Route path="transactions/:id" element={<TransactionDetail />} />
           <Route path="transactions/edit/:id" element={<TransactionForm mode="edit" />} />
-          
+
           {/* Scanner - SEPARATE ROUTE */}
           <Route path="scanner" element={<Scanner />} />
 
@@ -142,14 +173,14 @@ const AppRoutes: React.FC = () => {
           <Route path="products/new" element={<ProductForm />} />
           <Route path="products/edit/:id" element={<ProductForm />} />
           <Route path="products/:id" element={<ProductDetail />} />
-          
-          {/* Users - FIXED ROUTES */}
+
+          {/* Users */}
           <Route path="users" element={<UsersList />} />
           <Route path="users/create" element={<UsersForm mode="create" />} />
           <Route path="users/edit/:id" element={<UsersForm mode="edit" />} />
           <Route path="users/:id" element={<UsersDetail />} />
 
-          {/* User Levels - NEW ROUTES */}
+          {/* User Levels */}
           <Route path="user-levels/*" element={<UserLevels />} />
         </Route>
 

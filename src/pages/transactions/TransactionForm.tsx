@@ -1,13 +1,14 @@
+// src/pages/transactions/TransactionForm.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { 
-  Save, 
-  Plus, 
-  Trash2, 
-  ArrowLeft, 
-  User, 
-  MapPin, 
-  Calendar, 
+import {
+  Save,
+  Plus,
+  Trash2,
+  ArrowLeft,
+  User,
+  MapPin,
+  Calendar,
   Hash,
   FileText,
   Package,
@@ -18,30 +19,43 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useTransactionStore } from '../../store/useTransactionStore';
+// 1. UPDATE: Import yang disesuaikan
 import {
   Transaction,
   CreateTransactionRequest,
   CreateTransactionItemRequest,
-  TRANSACTION_TYPE_LABELS
+  TRANSACTION_TYPE_LABELS,
+  CONDITION_OPTIONS
 } from '../../types/transaction.types';
 import { productService } from '../../services/productService';
 import { Product } from '../../types/product.types';
 
-const CONDITION_OPTIONS = [
-  'excellent',
-  'good',
-  'fair',
-  'poor'
-] as const;
-
+// 2. UPDATE: Interface props (tambahkan ini jika belum ada)
 interface TransactionFormProps {
   mode: 'create' | 'edit';
+  defaultTransactionType?: string;
+  hideTransactionTypeSelector?: boolean;
+  requiredNotes?: boolean;
 }
+// 3. UPDATE: Condition options untuk dropdown
+const CONDITION_OPTIONS_FOR_FORM = [
+  'New',
+  'Good',
+  'Fair',
+  'Poor',
+  'Damaged'
+] as const;
 
-const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
+
+const TransactionForm: React.FC<TransactionFormProps> = ({
+  mode,
+  defaultTransactionType,
+  hideTransactionTypeSelector = false,
+  requiredNotes = false
+}) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  
+
   const {
     currentTransaction,
     isLoading,
@@ -52,9 +66,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     clearCurrentTransaction,
     clearError
   } = useTransactionStore();
-  
+
+  // 4. UPDATE: Initial formData dengan support untuk repair dan lost
   const [formData, setFormData] = useState<Partial<CreateTransactionRequest>>({
-    transaction_type: 'check_out',
+    transaction_type: defaultTransactionType || 'check_out',
     first_person: '',
     second_person: '',
     location: '',
@@ -62,13 +77,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     status: 'open',
     items: []
   });
-
   const [items, setItems] = useState<CreateTransactionItemRequest[]>([]);
   const [showAddItem, setShowAddItem] = useState(false);
   const [searchProduct, setSearchProduct] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Product state
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -91,46 +105,59 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     };
   }, [mode, id]);
 
-  // MODIFIED: Load products based on transaction type
+  // 5. UPDATE: Load products based on transaction type (dengan support repair dan lost)
   const loadProducts = async () => {
     setLoadingProducts(true);
     setProductError(null);
-    
+
     try {
       console.log('🔄 Loading products from API...');
       console.log('🎯 Transaction type:', formData.transaction_type);
-      
-      // Filter berdasarkan transaction type
+
       let statusFilter: string | undefined;
-      
+
       if (formData.transaction_type === 'check_in') {
-        // Untuk Check In: ambil yang status "Checked Out" 
+        // Untuk Check In: ambil yang status "Checked Out" atau "In Use"
         statusFilter = 'Checked Out';
       } else if (formData.transaction_type === 'check_out') {
         // Untuk Check Out: ambil yang status "Available"
         statusFilter = 'Available';
+      } else if (formData.transaction_type === 'repair') {
+        // Untuk Repair: bisa ambil semua kecuali yang sudah lost
+        // Tidak ada filter khusus, tapi bisa filter yang bukan 'Lost'
+      } else if (formData.transaction_type === 'lost') {
+        // Untuk Lost: biasanya yang sedang dipinjam atau available
+        // Tidak ada filter khusus
       }
-      // Untuk transaction type lain (transfer, maintenance, dll): ambil semua
-      
+      // Untuk maintenance dan transfer: ambil semua
+
       const response = await productService.getProducts(1, 100, statusFilter ? {
         status: statusFilter
       } : {});
-      
+
       if (response.success && response.data) {
         const filteredProducts = response.data.products;
-        
-        setProducts(filteredProducts);
-        console.log(`✅ Products loaded for ${formData.transaction_type}:`, filteredProducts.length);
-        console.log('📦 Products by status:', 
-          filteredProducts.reduce((acc, p) => {
-            acc[p.status] = (acc[p.status] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>)
-        );
+
+        // Ensure all products have required properties (dengan safe access)
+        const safeProducts = filteredProducts.map(product => ({
+          ...product,
+          name: product.name || product.product_id || 'Unknown Product',
+          brand: product.brand || null,
+          model: product.model || null,
+          serial_number: product.serial_number || null,
+          status: product.status || 'Unknown',
+          condition: product.condition || 'Good',
+          location: product.location || null,
+          description: product.description || null,
+          quantity: product.quantity || 0
+        }));
+
+        setProducts(safeProducts);
+        console.log(`✅ Products loaded for ${formData.transaction_type}:`, safeProducts.length);
       } else {
         throw new Error(response.message || 'Failed to load products');
       }
-      
+
     } catch (error: any) {
       console.error('❌ Failed to load products:', error);
       setProductError('Failed to load products. Please try again.');
@@ -152,7 +179,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     // Populate form when currentTransaction is loaded (edit mode)
     if (currentTransaction && mode === 'edit') {
       console.log('📝 Populating form with transaction data:', currentTransaction);
-      
+
       setFormData({
         transaction_type: currentTransaction.transaction_type,
         reference_no: currentTransaction.reference_no,
@@ -174,7 +201,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
         status: item.status,
         notes: item.notes
       }));
-      
+
       setItems(formattedItems);
     }
   }, [currentTransaction, mode]);
@@ -196,7 +223,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     }
 
     console.log('🔄 Loading transaction for edit:', transactionId);
-    
+
     const transaction = await getTransactionById(transactionId);
     if (!transaction) {
       console.error('Transaction not found:', transactionId);
@@ -204,7 +231,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     }
   };
 
-  // MODIFIED: Remove quantity minimum validation
+  // 6. UPDATE: Enhanced validation untuk repair dan lost
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
@@ -220,16 +247,21 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
       errors.transaction_type = 'Transaction type is required';
     }
 
+    // Enhanced: Required notes untuk repair dan lost
+    if ((requiredNotes || formData.transaction_type === 'repair' || formData.transaction_type === 'lost')
+      && !formData.notes?.trim()) {
+      errors.notes = `Notes are required for ${TRANSACTION_TYPE_LABELS[formData.transaction_type as keyof typeof TRANSACTION_TYPE_LABELS]}`;
+    }
+
     if (items.length === 0) {
       errors.items = 'At least one item is required';
     }
 
-    // Validate each item - HAPUS validasi quantity minimal 1
+    // Validate each item
     items.forEach((item, index) => {
       if (!item.product_id) {
         errors[`item_${index}_product`] = 'Product is required';
       }
-      // MODIFIED: Hanya validasi quantity tidak boleh kosong, boleh 0 atau negatif
       if (item.quantity === undefined || item.quantity === null) {
         errors[`item_${index}_quantity`] = 'Quantity is required';
       }
@@ -239,9 +271,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     return Object.keys(errors).length === 0;
   };
 
+
+
   const handleInputChange = (field: keyof CreateTransactionRequest, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    
+
     // Clear validation error when user starts typing
     if (validationErrors[field]) {
       setValidationErrors(prev => ({ ...prev, [field]: '' }));
@@ -249,7 +283,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
   };
 
   const handleItemChange = (index: number, field: keyof CreateTransactionItemRequest, value: any) => {
-    setItems(prev => prev.map((item, i) => 
+    setItems(prev => prev.map((item, i) =>
       i === index ? { ...item, [field]: value } : item
     ));
 
@@ -260,46 +294,62 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     }
   };
 
-  // MODIFIED: Check product availability based on transaction type
+  // 7. UPDATE: Enhanced product validation untuk repair dan lost
   const handleAddItem = (product: Product) => {
-    // Validasi berdasarkan transaction type
-    if (formData.transaction_type === 'check_in' && product.status !== 'Checked Out') {
-      setProductError(`For Check In: only "Checked Out" products can be selected. "${product.name}" is ${product.status}`);
+    // Enhanced validation berdasarkan transaction type
+    if (formData.transaction_type === 'check_in' && !['Checked Out', 'In Use'].includes(product.status)) {
+      setProductError(`For Check In: only "Checked Out" or "In Use" products can be selected. "${product.name}" is ${product.status}`);
       return;
     }
-    
+
     if (formData.transaction_type === 'check_out' && product.status !== 'Available') {
       setProductError(`For Check Out: only "Available" products can be selected. "${product.name}" is ${product.status}`);
       return;
     }
-    
-    // Check if already added - ini tetap ada
+
+    if (formData.transaction_type === 'repair') {
+      // Untuk repair: tidak bisa pilih yang sudah lost atau disposed
+      if (['Lost', 'Disposed'].includes(product.status)) {
+        setProductError(`For Repair: cannot select products that are "${product.status}". "${product.name}" is ${product.status}`);
+        return;
+      }
+    }
+
+    if (formData.transaction_type === 'lost') {
+      // Untuk lost: tidak bisa pilih yang sudah lost
+      if (product.status === 'Lost') {
+        setProductError(`Product "${product.name}" is already marked as Lost`);
+        return;
+      }
+    }
+
+    // Check if already added
     const isAlreadyAdded = items.some(item => item.product_id === product.product_id);
     if (isAlreadyAdded) {
       setProductError(`Product "${product.name}" is already added to this transaction`);
       return;
     }
-    
+
     const newItem: CreateTransactionItemRequest = {
       product_id: product.product_id,
       quantity: 1,
-      condition_before: product.condition || 'good',
-      condition_after: '',
+      condition_before: product.condition || 'Good',
+      condition_after: formData.transaction_type === 'lost' ? 'Poor' : '', // Default untuk lost
       status: 'processed',
       notes: ''
     };
-    
+
     setItems(prev => [...prev, newItem]);
     setShowAddItem(false);
     setSearchProduct('');
-    
+
     // Clear errors
     setProductError(null);
     if (validationErrors.items) {
       setValidationErrors(prev => ({ ...prev, items: '' }));
     }
-    
-    console.log(`✅ Added product: ${product.name} (ID: ${product.product_id}) - Status: ${product.status} for ${formData.transaction_type}`);
+
+    console.log(`✅ Added product: ${product.name} (ID: ${product.product_id}) for ${formData.transaction_type}`);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -308,22 +358,22 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     console.log('🚀 Form submission started');
     console.log('📝 Form data:', formData);
     console.log('📦 Items:', items);
-    
+
     if (!validateForm()) {
       console.log('❌ Form validation failed:', validationErrors);
       return;
     }
 
     setIsSubmitting(true);
-    
+
     try {
       if (mode === 'create') {
         console.log('📤 Creating new transaction');
-        
+
         const createData: CreateTransactionRequest = {
           transaction_type: formData.transaction_type!,
           reference_no: formData.reference_no,
@@ -334,9 +384,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
           status: formData.status,
           items: items
         };
-        
+
         const success = await createTransaction(createData);
-        
+
         if (success) {
           console.log('✅ Transaction created successfully');
           navigate('/transactions');
@@ -345,7 +395,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
         }
       } else if (mode === 'edit' && id && currentTransaction) {
         console.log('📤 Updating transaction');
-        
+
         const updateData = {
           reference_no: formData.reference_no,
           first_person: formData.first_person!,
@@ -355,9 +405,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
           status: formData.status
           // Note: Items update might need separate endpoint
         };
-        
+
         const success = await updateTransaction(parseInt(id), updateData);
-        
+
         if (success) {
           console.log('✅ Transaction updated successfully');
           navigate(`/transactions/${id}`);
@@ -388,21 +438,21 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
     try {
       console.log('🔍 Searching products:', query);
       console.log('🎯 For transaction type:', formData.transaction_type);
-      
+
       // Filter berdasarkan transaction type
       let statusFilter: string | undefined;
-      
+
       if (formData.transaction_type === 'check_in') {
         statusFilter = 'Checked Out';
       } else if (formData.transaction_type === 'check_out') {
         statusFilter = 'Available';
       }
-      
+
       const response = await productService.getProducts(1, 50, {
         search: query,
         ...(statusFilter && { status: statusFilter })
       });
-      
+
       if (response.success && response.data) {
         setProducts(response.data.products);
         console.log('✅ Search results:', response.data.products.length);
@@ -418,8 +468,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
   const totalItems = items.length;
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
 
-  const filteredProducts = products.filter(product => 
-    product.name.toLowerCase().includes(searchProduct.toLowerCase()) ||
+  const filteredProducts = products.filter(product =>
     product.product_id.toLowerCase().includes(searchProduct.toLowerCase()) ||
     product.brand?.toLowerCase().includes(searchProduct.toLowerCase()) ||
     product.model?.toLowerCase().includes(searchProduct.toLowerCase()) ||
@@ -500,44 +549,29 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                   <h2 className="text-lg font-medium text-gray-900 dark:text-white">Transaction Details</h2>
                 </div>
-                
+
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Transaction Type *
-                      </label>
-                      <select
-                        value={formData.transaction_type}
-                        onChange={(e) => handleInputChange('transaction_type', e.target.value)}
-                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
-                          validationErrors.transaction_type ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                        }`}
-                      >
-                        {Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
-                        ))}
-                      </select>
-                      {validationErrors.transaction_type && (
-                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.transaction_type}</p>
-                      )}
-                      
-                      {/* Helper text untuk transaction type */}
-                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        {formData.transaction_type === 'check_in' && (
-                          <div className="flex items-center text-blue-600 dark:text-blue-400">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Check In: Select items with "Checked Out" status
-                          </div>
-                        )}
-                        {formData.transaction_type === 'check_out' && (
-                          <div className="flex items-center text-green-600 dark:text-green-400">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Check Out: Select items with "Available" status
-                          </div>
+                    {!hideTransactionTypeSelector && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Transaction Type *
+                        </label>
+                        <select
+                          value={formData.transaction_type}
+                          onChange={(e) => handleInputChange('transaction_type', e.target.value)}
+                          className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.transaction_type ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                            }`}
+                        >
+                          {Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                        {validationErrors.transaction_type && (
+                          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.transaction_type}</p>
                         )}
                       </div>
-                    </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -563,9 +597,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                         value={formData.first_person || ''}
                         onChange={(e) => handleInputChange('first_person', e.target.value)}
                         placeholder="Enter person name"
-                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
-                          validationErrors.first_person ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                        }`}
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.first_person ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                          }`}
                       />
                       {validationErrors.first_person && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.first_person}</p>
@@ -596,28 +629,47 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                         value={formData.location || ''}
                         onChange={(e) => handleInputChange('location', e.target.value)}
                         placeholder="Enter location"
-                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
-                          validationErrors.location ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                        }`}
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.location ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                          }`}
                       />
                       {validationErrors.location && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.location}</p>
                       )}
                     </div>
 
+
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         <FileText className="inline h-4 w-4 mr-1" />
-                        Notes
+                        Notes {requiredNotes && <span className="text-red-500">*</span>}
                       </label>
                       <textarea
                         value={formData.notes || ''}
                         onChange={(e) => handleInputChange('notes', e.target.value)}
-                        rows={3}
-                        placeholder="Additional notes..."
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                        rows={requiredNotes ? 4 : 3} // More rows if required
+                        placeholder={
+                          requiredNotes
+                            ? formData.transaction_type === 'repair'
+                              ? "Describe the issue, symptoms, and required repairs..."
+                              : formData.transaction_type === 'lost'
+                                ? "Explain the circumstances of loss, last known location, and responsible person..."
+                                : "Additional notes..."
+                            : "Additional notes..."
+                        }
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.notes ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                          }`}
                       />
+                      {validationErrors.notes && (
+                        <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.notes}</p>
+                      )}
+                      {requiredNotes && (
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {formData.transaction_type === 'repair' && "Detail description helps maintenance team understand the issue"}
+                          {formData.transaction_type === 'lost' && "Complete information helps with asset recovery and accountability"}
+                        </p>
+                      )}
                     </div>
+
                   </div>
                 </div>
               </div>
@@ -630,11 +682,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                       <h2 className="text-lg font-medium text-gray-900 dark:text-white">Items</h2>
                       {formData.transaction_type && (
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                          {formData.transaction_type === 'check_in' 
-                            ? 'Only "Checked Out" items can be selected' 
+                          {formData.transaction_type === 'check_in'
+                            ? 'Only "Checked Out" items can be selected'
                             : formData.transaction_type === 'check_out'
-                            ? 'Only "Available" items can be selected'
-                            : 'All items can be selected'}
+                              ? 'Only "Available" items can be selected'
+                              : 'All items can be selected'}
                         </p>
                       )}
                     </div>
@@ -685,14 +737,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                   <p className="text-sm text-gray-500 dark:text-gray-400">ID: {item.product_id}</p>
                                   {product && (
                                     <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                                      Status: <span className={`font-medium ${
-                                        product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
+                                      Status: <span className={`font-medium ${product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
                                         product.status === 'Checked Out' ? 'text-red-600 dark:text-red-400' :
-                                        'text-orange-600 dark:text-orange-400'
-                                      }`}>{product.status}</span>
+                                          'text-orange-600 dark:text-orange-400'
+                                        }`}>{product.status}</span>
                                     </div>
                                   )}
-                                  
+
                                   <div className="mt-2">
                                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                                       Quantity *
@@ -704,9 +755,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                         const newQuantity = parseInt(e.target.value) || 0;
                                         handleItemChange(index, 'quantity', newQuantity);
                                       }}
-                                      className={`w-full px-2 py-1 border rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${
-                                        validationErrors[`item_${index}_quantity`] ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                                      }`}
+                                      className={`w-full px-2 py-1 border rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors[`item_${index}_quantity`] ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                                        }`}
                                     />
                                     {validationErrors[`item_${index}_quantity`] && (
                                       <p className="mt-1 text-xs text-red-600 dark:text-red-400">{validationErrors[`item_${index}_quantity`]}</p>
@@ -796,7 +846,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                   <h2 className="text-lg font-medium text-gray-900 dark:text-white">Summary</h2>
                 </div>
-                
+
                 <div className="p-6">
                   <div className="space-y-4">
                     <div className="flex justify-between">
@@ -809,15 +859,14 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-500 dark:text-gray-400">Status:</span>
-                      <span className={`text-sm font-medium ${
-                        formData.status === 'open' ? 'text-green-600 dark:text-green-400' :
+                      <span className={`text-sm font-medium ${formData.status === 'open' ? 'text-green-600 dark:text-green-400' :
                         formData.status === 'pending' ? 'text-yellow-600 dark:text-yellow-400' :
-                        'text-gray-600 dark:text-gray-400'
-                      }`}>
+                          'text-gray-600 dark:text-gray-400'
+                        }`}>
                         {formData.status?.charAt(0).toUpperCase() + formData.status?.slice(1)}
                       </span>
                     </div>
-                    
+
                     {/* Transaction Type Info */}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-between items-start">
@@ -829,8 +878,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                           {formData.transaction_type && (
                             <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                               {formData.transaction_type === 'check_in' ? 'Return items' :
-                               formData.transaction_type === 'check_out' ? 'Borrow items' :
-                               'Transfer/Other'}
+                                formData.transaction_type === 'check_out' ? 'Borrow items' :
+                                  'Transfer/Other'}
                             </div>
                           )}
                         </div>
@@ -882,11 +931,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white">Add Item</h3>
                   {formData.transaction_type && (
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      {formData.transaction_type === 'check_in' 
-                        ? 'Showing only "Checked Out" items' 
+                      {formData.transaction_type === 'check_in'
+                        ? 'Showing only "Checked Out" items'
                         : formData.transaction_type === 'check_out'
-                        ? 'Showing only "Available" items'
-                        : 'Showing all items'}
+                          ? 'Showing only "Available" items'
+                          : 'Showing all items'}
                     </p>
                   )}
                 </div>
@@ -944,10 +993,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                     <Package className="h-8 w-8 mx-auto mb-2" />
                     <p>No products found</p>
                     <p className="text-sm">
-                      {searchProduct ? 'Try searching with different keywords' : 
-                       formData.transaction_type === 'check_in' ? 'No "Checked Out" products available' :
-                       formData.transaction_type === 'check_out' ? 'No "Available" products in stock' :
-                       'No products available'}
+                      {searchProduct ? 'Try searching with different keywords' :
+                        formData.transaction_type === 'check_in' ? 'No "Checked Out" products available' :
+                          formData.transaction_type === 'check_out' ? 'No "Available" products in stock' :
+                            'No products available'}
                     </p>
                     {!searchProduct && (
                       <button
@@ -963,10 +1012,10 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                     {filteredProducts.map(product => {
                       // Check availability based on transaction type
                       const isAlreadyAdded = items.some(item => item.product_id === product.product_id);
-                      
+
                       let cannotSelect = isAlreadyAdded;
                       let reason = '';
-                      
+
                       if (formData.transaction_type === 'check_in') {
                         // Untuk Check In: hanya bisa pilih yang "Checked Out"
                         if (product.status !== 'Checked Out') {
@@ -986,26 +1035,25 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                         }
                       }
                       // Untuk transaction type lain: bisa pilih semua
-                      
+
                       if (isAlreadyAdded) {
                         reason = 'Already added';
                       }
-                      
+
                       return (
                         <div
                           key={product.product_id}
                           onClick={() => !cannotSelect && handleAddItem(product)}
-                          className={`p-3 border rounded-lg transition-colors duration-200 ${
-                            cannotSelect
-                              ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 cursor-not-allowed opacity-60'
-                              : 'border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-blue-300 dark:hover:border-blue-600'
-                          }`}
+                          className={`p-3 border rounded-lg transition-colors duration-200 ${cannotSelect
+                            ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 cursor-not-allowed opacity-60'
+                            : 'border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-blue-300 dark:hover:border-blue-600'
+                            }`}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="font-medium text-gray-900 dark:text-white">{product.name}</div>
                               <div className="text-sm text-gray-500 dark:text-gray-400">ID: {product.product_id}</div>
-                              
+
                               {/* Product details dari API real */}
                               {product.brand && (
                                 <div className="text-xs text-gray-400 dark:text-gray-500">Brand: {product.brand}</div>
@@ -1019,25 +1067,23 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                               {product.description && (
                                 <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{product.description}</div>
                               )}
-                              
+
                               <div className="flex items-center space-x-4 mt-1">
-                                <div className={`text-xs font-medium ${
-                                  product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
+                                <div className={`text-xs font-medium ${product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
                                   product.status === 'Checked Out' ? 'text-red-600 dark:text-red-400' :
-                                  product.status === 'Maintenance' ? 'text-orange-600 dark:text-orange-400' :
-                                  product.status === 'Repair' ? 'text-yellow-600 dark:text-yellow-400' :
-                                  'text-gray-600 dark:text-gray-400'
-                                }`}>
+                                    product.status === 'Maintenance' ? 'text-orange-600 dark:text-orange-400' :
+                                      product.status === 'Repair' ? 'text-yellow-600 dark:text-yellow-400' :
+                                        'text-gray-600 dark:text-gray-400'
+                                  }`}>
                                   Status: {product.status}
                                 </div>
                                 <div className="text-xs text-blue-600 dark:text-blue-400">
                                   Condition: {product.condition}
                                 </div>
-                                <div className={`text-xs font-medium ${
-                                  product.quantity <= 0 ? 'text-red-600 dark:text-red-400' :
+                                <div className={`text-xs font-medium ${product.quantity <= 0 ? 'text-red-600 dark:text-red-400' :
                                   product.quantity === 1 ? 'text-orange-600 dark:text-orange-400' :
-                                  'text-green-600 dark:text-green-400'
-                                }`}>
+                                    'text-green-600 dark:text-green-400'
+                                  }`}>
                                   Qty: {product.quantity}
                                 </div>
                                 {product.location && (
@@ -1046,7 +1092,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                   </div>
                                 )}
                               </div>
-                              
+
                               {/* Warning messages */}
                               {cannotSelect && !isAlreadyAdded && reason && (
                                 <div className="mt-2 text-xs text-red-600 dark:text-red-400 font-medium">
@@ -1054,12 +1100,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                 </div>
                               )}
                             </div>
-                            
+
                             {/* Product Image */}
                             {product.img_product && (
                               <div className="ml-3">
-                                <img 
-                                  src={productService.getImageUrl(product.img_product)} 
+                                <img
+                                  src={productService.getImageUrl(product.img_product)}
                                   alt={product.name}
                                   className="w-12 h-12 object-cover rounded border border-gray-200 dark:border-gray-600"
                                   onError={(e) => {
@@ -1069,7 +1115,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                                 />
                               </div>
                             )}
-                            
+
                             {/* Status badges */}
                             <div className="ml-2 flex flex-col gap-1">
                               {isAlreadyAdded && (
@@ -1080,9 +1126,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ mode }) => {
                               {cannotSelect && !isAlreadyAdded && (
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
                                   {formData.transaction_type === 'check_in' && product.status !== 'Checked Out' ? 'Need Checked Out' :
-                                   formData.transaction_type === 'check_out' && product.status !== 'Available' ? 'Not Available' :
-                                   formData.transaction_type === 'check_out' && product.quantity <= 0 ? 'No Stock' :
-                                   'Cannot Select'}
+                                    formData.transaction_type === 'check_out' && product.status !== 'Available' ? 'Not Available' :
+                                      formData.transaction_type === 'check_out' && product.quantity <= 0 ? 'No Stock' :
+                                        'Cannot Select'}
                                 </span>
                               )}
                             </div>

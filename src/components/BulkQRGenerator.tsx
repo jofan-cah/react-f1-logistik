@@ -312,7 +312,7 @@ const BulkQRGenerator: React.FC<BulkQRGeneratorProps> = ({
               overflow: hidden;
               text-overflow: ellipsis;
               white-space: nowrap;
-            ">${qr.product.name}</div>
+            ">FIBERONE</div>
             
             <div style="
               font-size: ${layout.fontSize.id};
@@ -395,7 +395,7 @@ const BulkQRGenerator: React.FC<BulkQRGeneratorProps> = ({
           
           <div style="flex: 1;">
             <div style="font-size: 14px; font-weight: bold; margin-bottom: 3px;">
-              ${qr.product.name}
+             FIBERONE
             </div>
             <div style="font-size: 12px; color: #666; margin-bottom: 2px;">
               Product ID: ${qr.product.product_id}
