@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Search, 
@@ -149,19 +148,6 @@ const TransactionsList: React.FC = () => {
     fetchTransactions();
   };
 
-  const getStatusBadgeColor = (status: Transaction['status']) => {
-    switch (status) {
-      case 'open':
-        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200';
-      case 'pending':
-        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200';
-      case 'closed':
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
-      default:
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
-    }
-  };
-
   const getTypeBadgeColor = (type: Transaction['transaction_type']) => {
     switch (type) {
       case 'check_out':
@@ -174,7 +160,7 @@ const TransactionsList: React.FC = () => {
         return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200';
       case 'lost':
         return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
-      case 'return':
+      case 'transfer':
         return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200';
       default:
         return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
@@ -301,7 +287,7 @@ const TransactionsList: React.FC = () => {
                       <option value="maintenance">Maintenance</option>
                       <option value="repair">Repair</option>
                       <option value="lost">Lost</option>
-                      <option value="return">Return</option>
+                      <option value="transfer">Transfer</option>
                     </select>
                   </div>
 
@@ -418,9 +404,6 @@ const TransactionsList: React.FC = () => {
                       Date
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                       Items
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -476,11 +459,26 @@ const TransactionsList: React.FC = () => {
                         </div>
                       </td>
                       
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-2">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeColor(transaction.status)}`}>
-                            {TRANSACTION_STATUS_LABELS[transaction.status]}
-                          </span>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                        {transaction.items?.length || transaction.TransactionItems?.length || 0} items
+                      </td>
+                      
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            onClick={() => navigate(`/transactions/${transaction.id}`)}
+                            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300 transition-colors duration-200"
+                            title="View Details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => navigate(`/transactions/edit/${transaction.id}`)}
+                            className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-900 dark:hover:text-yellow-300 transition-colors duration-200"
+                            title="Edit"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
                           
                           {/* Status toggle buttons */}
                           {transaction.status === 'open' && (
@@ -512,29 +510,6 @@ const TransactionsList: React.FC = () => {
                               )}
                             </button>
                           )}
-                        </div>
-                      </td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {transaction.items?.length || transaction.TransactionItems?.length || 0} items
-                      </td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end space-x-2">
-                          <button
-                            onClick={() => navigate(`/transactions/${transaction.id}`)}
-                            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors duration-200"
-                            title="View Details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => navigate(`/transactions/edit/${transaction.id}`)}
-                            className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-900 dark:hover:text-yellow-300 transition-colors duration-200"
-                            title="Edit"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
                           
                           <button
                             onClick={() => setDeleteConfirm(transaction.id!)}

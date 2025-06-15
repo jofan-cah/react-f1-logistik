@@ -7,11 +7,11 @@ import {
   EditIcon, 
   DeleteIcon, 
   ViewIcon,
-  ExclamationIcon 
+  ExclamationIcon
 } from '../../components/ui/Icons';
 import { useTheme } from '../../context/ThemeContext';
 import { useCategoryStore } from '../../store/useCategoryStore';
-import { Category } from '../../types/category.types';
+import { Category, CategoryFilters } from '../../types/category.types';
 import DeleteConfirmationModal from '../../components/ui/DeleteConfirmationModal';
 
 // Helper functions
@@ -63,6 +63,22 @@ const StatusBadge = ({ has_stock, darkMode = false }: { has_stock: boolean; dark
   );
 };
 
+const LowStockBadge = ({ is_low_stock, darkMode = false }: { is_low_stock: boolean; darkMode?: boolean }) => {
+  if (!is_low_stock) return null;
+  
+  return (
+    <span className={`
+      inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+      ${darkMode 
+        ? 'bg-red-900 text-red-200' 
+        : 'bg-red-100 text-red-800'
+      }
+    `}>
+      ⚠️ Low Stock
+    </span>
+  );
+};
+
 const CategoryCard = ({ 
   category, 
   darkMode = false, 
@@ -72,10 +88,7 @@ const CategoryCard = ({
   darkMode?: boolean;
   onDelete: (category: Category) => void;
 }) => {
-  const [showDropdown, setShowDropdown] = useState(false);
-
   const handleDelete = () => {
-    setShowDropdown(false);
     onDelete(category);
   };
 
@@ -105,6 +118,7 @@ const CategoryCard = ({
                   {category.code}
                 </span>
                 <StatusBadge has_stock={category.has_stock} darkMode={darkMode} />
+                <LowStockBadge is_low_stock={category.is_low_stock} darkMode={darkMode} />
               </div>
             </div>
           </div>
@@ -153,30 +167,116 @@ const CategoryCard = ({
         </div>
         
         <div className="mt-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              {category.has_stock && (
-                <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Min Stock: {category.min_stock} {category.unit}
-                </span>
-              )}
-              {category.unit && (
-                <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Unit: {category.unit}
-                </span>
-              )}
-            </div>
+          <div className="grid grid-cols-2 gap-4">
+            {category.has_stock && (
+              <>
+                <div>
+                  <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>Current Stock</p>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {category.current_stock.toLocaleString()} {category.unit}
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>Min/Max Stock</p>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {category.min_stock} / {category.max_stock} {category.unit}
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>Reorder Point</p>
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    {category.reorder_point} {category.unit}
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>Stock Status</p>
+                  <p className={`text-sm font-semibold ${
+                    category.is_low_stock 
+                      ? 'text-red-600' 
+                      : darkMode 
+                        ? 'text-green-400' 
+                        : 'text-green-600'
+                  }`}>
+                    {category.is_low_stock ? 'Low Stock' : 'Normal'}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+          
+          <div className="flex items-center justify-between mt-4">
             <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               Updated {formatDate(category.updated_at)}
             </span>
           </div>
           
           {category.notes && (
-            <p className={`mt-3 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            <p className={`mt-3 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'} line-clamp-2`}>
               {category.notes}
             </p>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// Pagination Component
+const Pagination = ({ 
+  pagination, 
+  onPageChange, 
+  darkMode = false 
+}: {
+  pagination: any;
+  onPageChange: (page: number) => void;
+  darkMode?: boolean;
+}) => {
+  if (!pagination || pagination.totalPages <= 1) return null;
+
+  const { page, totalPages, hasPrevPage, hasNextPage } = pagination;
+
+  return (
+    <div className="flex items-center justify-between">
+      <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-700'}`}>
+        Showing page {page} of {totalPages} ({pagination.total} total categories)
+      </div>
+      
+      <div className="flex items-center space-x-2">
+        <button
+          onClick={() => onPageChange(page - 1)}
+          disabled={!hasPrevPage}
+          className={`
+            p-2 rounded-lg border transition-colors
+            ${!hasPrevPage 
+              ? 'opacity-50 cursor-not-allowed' 
+              : darkMode
+                ? 'border-gray-600 hover:bg-gray-700 text-gray-300'
+                : 'border-gray-300 hover:bg-gray-50 text-gray-700'
+            }
+          `}
+        >
+          <ExclamationIcon className="w-4 h-4" />
+        </button>
+        
+        <span className={`px-4 py-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+          {page} / {totalPages}
+        </span>
+        
+        <button
+          onClick={() => onPageChange(page + 1)}
+          disabled={!hasNextPage}
+          className={`
+            p-2 rounded-lg border transition-colors
+            ${!hasNextPage 
+              ? 'opacity-50 cursor-not-allowed' 
+              : darkMode
+                ? 'border-gray-600 hover:bg-gray-700 text-gray-300'
+                : 'border-gray-300 hover:bg-gray-50 text-gray-700'
+            }
+          `}
+        >
+          <ExclamationIcon className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
@@ -187,43 +287,59 @@ const CategoriesList = () => {
   const { darkMode } = useTheme();
   const {
     categories,
+    pagination,
+    categoryStats,
     isLoading,
     error,
+    filters,
     fetchCategories,
+    fetchCategoryStats,
     deleteCategory,
+    setFilters,
     clearError
   } = useCategoryStore();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'stock' | 'no-stock'>('all');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
-  // Load categories on mount
+  // Load data on mount
   useEffect(() => {
     fetchCategories();
+    fetchCategoryStats();
   }, []);
 
-  // Filter and search logic
-  const filteredCategories = useMemo(() => {
-    return categories.filter(category => {
-      const matchesSearch = category.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           category.code.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesFilter = filterType === 'all' || 
-                           (filterType === 'stock' && category.has_stock) ||
-                           (filterType === 'no-stock' && !category.has_stock);
-      
-      return matchesSearch && matchesFilter;
-    });
-  }, [categories, searchTerm, filterType]);
+  // Search and filter handlers
+  const handleSearchChange = (search: string) => {
+    setFilters({ ...filters, search, page: 1 });
+    fetchCategories({ ...filters, search, page: 1 });
+  };
 
-  // Stats
-  const stats = useMemo(() => ({
-    total: categories.length,
-    withStock: categories.filter(c => c.has_stock).length,
-    noStock: categories.filter(c => !c.has_stock).length,
-  }), [categories]);
+  const handleFilterChange = (filterType: string) => {
+    const newFilters: CategoryFilters = { ...filters, page: 1 };
+    
+    if (filterType === 'all') {
+      delete newFilters.has_stock;
+      delete newFilters.is_low_stock;
+    } else if (filterType === 'stock') {
+      newFilters.has_stock = true;
+      delete newFilters.is_low_stock;
+    } else if (filterType === 'no-stock') {
+      newFilters.has_stock = false;
+      delete newFilters.is_low_stock;
+    } else if (filterType === 'low-stock') {
+      newFilters.has_stock = true;
+      newFilters.is_low_stock = true;
+    }
+    
+    setFilters(newFilters);
+    fetchCategories(newFilters);
+  };
+
+  const handlePageChange = (page: number) => {
+    const newFilters = { ...filters, page };
+    setFilters(newFilters);
+    fetchCategories(newFilters);
+  };
 
   const handleDeleteClick = (category: Category) => {
     setSelectedCategory(category);
@@ -236,15 +352,25 @@ const CategoriesList = () => {
       if (success) {
         setShowDeleteModal(false);
         setSelectedCategory(null);
+        // Refresh stats after deletion
+        fetchCategoryStats();
       }
     }
+  };
+
+  // Get current filter type for UI
+  const getCurrentFilterType = () => {
+    if (filters.is_low_stock) return 'low-stock';
+    if (filters.has_stock === true) return 'stock';
+    if (filters.has_stock === false) return 'no-stock';
+    return 'all';
   };
 
   if (isLoading && categories.length === 0) {
     return (
       <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gray-50'} p-6`}>
         <div className="max-w-7xl mx-auto">
-          <div className="text-center">
+          <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading categories...</p>
           </div>
@@ -264,7 +390,8 @@ const CategoriesList = () => {
                 Categories
               </h1>
               <p className={`mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Manage your product categories and stock settings ({stats.total} total)
+                Manage your product categories and stock settings
+                {pagination && ` (${pagination.total} total)`}
               </p>
             </div>
             <Link
@@ -298,61 +425,81 @@ const CategoriesList = () => {
         )}
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className={`p-6 rounded-xl border ${
-            darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-          }`}>
-            <div className="flex items-center">
-              <div className="p-3 rounded-lg bg-indigo-100 dark:bg-indigo-900">
-                <span className="text-2xl">📦</span>
-              </div>
-              <div className="ml-4">
-                <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Total Categories
-                </p>
-                <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {stats.total}
-                </p>
+        {categoryStats && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className={`p-6 rounded-xl border ${
+              darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}>
+              <div className="flex items-center">
+                <div className="p-3 rounded-lg bg-indigo-100 dark:bg-indigo-900">
+                  <span className="text-2xl">📦</span>
+                </div>
+                <div className="ml-4">
+                  <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    Total Categories
+                  </p>
+                  <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {categoryStats.total}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className={`p-6 rounded-xl border ${
-            darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-          }`}>
-            <div className="flex items-center">
-              <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900">
-                <span className="text-2xl">✅</span>
-              </div>
-              <div className="ml-4">
-                <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  With Stock Tracking
-                </p>
-                <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {stats.withStock}
-                </p>
+            <div className={`p-6 rounded-xl border ${
+              darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}>
+              <div className="flex items-center">
+                <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900">
+                  <span className="text-2xl">✅</span>
+                </div>
+                <div className="ml-4">
+                  <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    With Stock Tracking
+                  </p>
+                  <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {categoryStats.withStock}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className={`p-6 rounded-xl border ${
-            darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-          }`}>
-            <div className="flex items-center">
-              <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
-                <span className="text-2xl">❌</span>
+            <div className={`p-6 rounded-xl border ${
+              darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}>
+              <div className="flex items-center">
+                <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900">
+                  <span className="text-2xl">⚠️</span>
+                </div>
+                <div className="ml-4">
+                  <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    Low Stock
+                  </p>
+                  <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {categoryStats.lowStock}
+                  </p>
+                </div>
               </div>
-              <div className="ml-4">
-                <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  No Stock Tracking
-                </p>
-                <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {stats.noStock}
-                </p>
+            </div>
+
+            <div className={`p-6 rounded-xl border ${
+              darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}>
+              <div className="flex items-center">
+                <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900">
+                  <span className="text-2xl">📊</span>
+                </div>
+                <div className="ml-4">
+                  <p className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    Total Stock Value
+                  </p>
+                  <p className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {categoryStats.totalStockValue.toLocaleString()}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Search and Filter */}
         <div className={`p-6 rounded-xl border mb-8 ${
@@ -366,8 +513,8 @@ const CategoriesList = () => {
               <input
                 type="text"
                 placeholder="Search categories..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={filters.search || ''}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className={`
                   w-full pl-10 pr-4 py-3 rounded-lg border transition-colors
                   ${darkMode 
@@ -380,8 +527,8 @@ const CategoriesList = () => {
             </div>
             
             <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as any)}
+              value={getCurrentFilterType()}
+              onChange={(e) => handleFilterChange(e.target.value)}
               className={`
                 px-4 py-3 rounded-lg border transition-colors
                 ${darkMode 
@@ -394,22 +541,39 @@ const CategoriesList = () => {
               <option value="all">All Categories</option>
               <option value="stock">With Stock Tracking</option>
               <option value="no-stock">No Stock Tracking</option>
+              <option value="low-stock">Low Stock Alert</option>
             </select>
           </div>
         </div>
 
         {/* Categories Grid */}
-        {filteredCategories.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCategories.map((category) => (
-              <CategoryCard
-                key={category.id}
-                category={category}
-                darkMode={darkMode}
-                onDelete={handleDeleteClick}
-              />
-            ))}
-          </div>
+        {categories.length > 0 ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              {categories.map((category) => (
+                <CategoryCard
+                  key={category.id}
+                  category={category}
+                  darkMode={darkMode}
+                  onDelete={handleDeleteClick}
+                />
+              ))}
+            </div>
+            
+            {/* Pagination */}
+            {pagination && (
+              <div className={`
+                p-4 rounded-xl border
+                ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}
+              `}>
+                <Pagination 
+                  pagination={pagination}
+                  onPageChange={handlePageChange}
+                  darkMode={darkMode}
+                />
+              </div>
+            )}
+          </>
         ) : (
           <div className={`
             text-center py-12 rounded-xl border-2 border-dashed
@@ -420,12 +584,12 @@ const CategoriesList = () => {
               No categories found
             </h3>
             <p className={`mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-              {searchTerm || filterType !== 'all' 
+              {filters.search || getCurrentFilterType() !== 'all'
                 ? 'Try adjusting your search or filters'
                 : 'Get started by creating your first category'
               }
             </p>
-            {(!searchTerm && filterType === 'all') && (
+            {(!filters.search && getCurrentFilterType() === 'all') && (
               <Link
                 to="/categories/create"
                 className="inline-flex items-center mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"

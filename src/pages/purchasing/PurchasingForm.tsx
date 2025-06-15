@@ -149,7 +149,7 @@ const PurchasingForm: React.FC<PurchasingFormProps> = ({ mode }) => {
 
   // Add bulk items berdasarkan jumlah yang diinput
   const addBulkItems = () => {
-    const count = Math.max(1, Math.min(50, bulkItemCount)); // Batasi maksimal 50 item
+    const count = Math.max(1, Math.min(1000, bulkItemCount)); // Batasi maksimal 50 item
     const newItems: ItemInput[] = [];
     
     for (let i = 0; i < count; i++) {

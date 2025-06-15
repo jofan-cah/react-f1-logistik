@@ -5,6 +5,7 @@ import {
   ArrowLeftIcon, 
   EditIcon, 
   DeleteIcon, 
+  PlusIcon,
   ExclamationIcon
 } from '../../components/ui/Icons';
 import { useTheme } from '../../context/ThemeContext';
@@ -63,6 +64,138 @@ const StatusBadge = ({ has_stock, darkMode = false }: { has_stock: boolean; dark
   );
 };
 
+const LowStockBadge = ({ is_low_stock, darkMode = false }: { is_low_stock: boolean; darkMode?: boolean }) => {
+  if (!is_low_stock) return null;
+  
+  return (
+    <span className={`
+      inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
+      ${darkMode 
+        ? 'bg-red-900 text-red-200' 
+        : 'bg-red-100 text-red-800'
+      }
+    `}>
+      ⚠️ Low Stock Alert
+    </span>
+  );
+};
+
+// Stock Adjustment Component
+const StockAdjustment = ({ 
+  category, 
+  darkMode = false, 
+  onStockUpdate 
+}: {
+  category: Category;
+  darkMode?: boolean;
+  onStockUpdate: () => void;
+}) => {
+  const [quantity, setQuantity] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { updateCategoryStock } = useCategoryStore();
+
+  const handleStockAdjustment = async (type: 'increase' | 'decrease') => {
+    if (quantity <= 0) return;
+
+    setIsSubmitting(true);
+    try {
+      const adjustmentQuantity = type === 'increase' ? quantity : -quantity;
+      const success = await updateCategoryStock(category.id, {
+        quantity: adjustmentQuantity,
+        notes: notes || `Manual ${type} by ${quantity}`,
+        movement_type: 'adjustment'
+      });
+
+      if (success) {
+        setQuantity(0);
+        setNotes('');
+        onStockUpdate();
+      }
+    } catch (error) {
+      console.error('Error updating stock:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!category.has_stock) return null;
+
+  return (
+    <div className={`
+      rounded-xl border p-6
+      ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}
+    `}>
+      <h2 className={`text-xl font-semibold mb-6 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+        Stock Adjustment
+      </h2>
+      
+      <div className="space-y-4">
+        <div>
+          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            Quantity
+          </label>
+          <input
+            type="number"
+            value={quantity}
+            onChange={(e) => setQuantity(parseInt(e.target.value) || 0)}
+            min="1"
+            placeholder="Enter quantity"
+            className={`
+              w-full px-4 py-3 rounded-lg border transition-colors
+              ${darkMode
+                ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+              }
+              focus:outline-none focus:ring-2
+            `}
+          />
+        </div>
+        
+        <div>
+          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            Notes (Optional)
+          </label>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Reason for adjustment"
+            className={`
+              w-full px-4 py-3 rounded-lg border transition-colors
+              ${darkMode
+                ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+              }
+              focus:outline-none focus:ring-2
+            `}
+          />
+        </div>
+        
+        <div className="flex space-x-3">
+          <button
+            onClick={() => handleStockAdjustment('increase')}
+            disabled={quantity <= 0 || isSubmitting}
+            className="flex-1 inline-flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <PlusIcon className="w-4 h-4 mr-2" />
+            Add Stock
+          </button>
+          
+          <button
+            onClick={() => handleStockAdjustment('decrease')}
+            disabled={quantity <= 0 || isSubmitting}
+            className="flex-1 inline-flex items-center justify-center px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ExclamationIcon className="w-4 h-4 mr-2" />
+            Remove Stock
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CategoryDetail = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -111,6 +244,12 @@ const CategoryDetail = () => {
 
   const handleBack = () => {
     navigate('/categories');
+  };
+
+  const handleStockUpdate = () => {
+    if (id) {
+      getCategoryById(parseInt(id));
+    }
   };
 
   // Loading state
@@ -224,6 +363,7 @@ const CategoryDetail = () => {
                     {currentCategory.code}
                   </span>
                   <StatusBadge has_stock={currentCategory.has_stock} darkMode={darkMode} />
+                  <LowStockBadge is_low_stock={currentCategory.is_low_stock} darkMode={darkMode} />
                   <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                     Updated {formatDate(currentCategory.updated_at)}
                   </span>
@@ -297,12 +437,64 @@ const CategoryDetail = () => {
               
               {currentCategory.has_stock && (
                 <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Current Stock
+                      </label>
+                      <p className={`mt-1 text-lg font-semibold ${
+                        currentCategory.is_low_stock 
+                          ? 'text-red-600' 
+                          : darkMode 
+                            ? 'text-green-400' 
+                            : 'text-green-600'
+                      }`}>
+                        {currentCategory.current_stock.toLocaleString()} {currentCategory.unit}
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Stock Status
+                      </label>
+                      <p className={`mt-1 text-lg font-semibold ${
+                        currentCategory.is_low_stock 
+                          ? 'text-red-600' 
+                          : darkMode 
+                            ? 'text-green-400' 
+                            : 'text-green-600'
+                      }`}>
+                        {currentCategory.is_low_stock ? 'Low Stock' : 'Normal'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Min Stock Level
+                      </label>
+                      <p className={`mt-1 text-lg ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+                        {currentCategory.min_stock.toLocaleString()} {currentCategory.unit}
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Max Stock Level
+                      </label>
+                      <p className={`mt-1 text-lg ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+                        {currentCategory.max_stock.toLocaleString()} {currentCategory.unit}
+                      </p>
+                    </div>
+                  </div>
+                  
                   <div>
                     <label className={`text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      Minimum Stock Level
+                      Reorder Point
                     </label>
                     <p className={`mt-1 text-lg ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>
-                      {currentCategory.min_stock.toLocaleString()}
+                      {currentCategory.reorder_point.toLocaleString()} {currentCategory.unit}
                     </p>
                   </div>
                   
@@ -330,8 +522,17 @@ const CategoryDetail = () => {
             </div>
           </div>
 
-          {/* Statistics & Timeline */}
+          {/* Right Column */}
           <div className="space-y-6">
+            {/* Stock Adjustment (only for stock-tracked categories) */}
+            {currentCategory.has_stock && (
+              <StockAdjustment 
+                category={currentCategory} 
+                darkMode={darkMode}
+                onStockUpdate={handleStockUpdate}
+              />
+            )}
+
             {/* Statistics Card */}
             <div className={`
               rounded-xl border p-6
@@ -369,6 +570,47 @@ const CategoryDetail = () => {
                     <span className="text-2xl">✅</span>
                   </div>
                 </div>
+                
+                {currentCategory.has_stock && (
+                  <>
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Stock Health
+                          </p>
+                          <p className={`text-lg font-bold ${
+                            currentCategory.is_low_stock 
+                              ? 'text-red-600' 
+                              : darkMode 
+                                ? 'text-green-400' 
+                                : 'text-green-600'
+                          }`}>
+                            {currentCategory.is_low_stock ? 'Low' : 'Good'}
+                          </p>
+                        </div>
+                        <span className="text-2xl">{currentCategory.is_low_stock ? '⚠️' : '✅'}</span>
+                      </div>
+                    </div>
+                    
+                    <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Stock Utilization
+                          </p>
+                          <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {currentCategory.max_stock > 0 
+                              ? Math.round((currentCategory.current_stock / currentCategory.max_stock) * 100)
+                              : 0
+                            }%
+                          </p>
+                        </div>
+                        <span className="text-2xl">📊</span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -447,15 +689,18 @@ const CategoryDetail = () => {
                 </button>
                 
                 {currentCategory.has_stock && (
-                  <button className={`
-                    w-full flex items-center px-4 py-3 rounded-lg transition-colors
-                    ${darkMode 
-                      ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white' 
-                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-                    }
-                  `}>
-                    <span className="text-lg mr-3">⚠️</span>
-                    Check Low Stock Items
+                  <button 
+                    onClick={() => navigate(`/stock-movements?category_id=${currentCategory.id}`)}
+                    className={`
+                      w-full flex items-center px-4 py-3 rounded-lg transition-colors
+                      ${darkMode 
+                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white' 
+                        : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                      }
+                    `}
+                  >
+                    <span className="text-lg mr-3">📈</span>
+                    View Stock Movement History
                   </button>
                 )}
               </div>

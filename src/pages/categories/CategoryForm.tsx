@@ -1,3 +1,4 @@
+// src/pages/categories/CategoryForm.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft } from 'lucide-react';
@@ -11,7 +12,10 @@ interface CategoryFormData {
   code: string;
   has_stock: boolean;
   min_stock: number;
+  max_stock: number;
+  current_stock: number;
   unit: string;
+  reorder_point: number;
   notes: string;
 }
 
@@ -38,7 +42,10 @@ const CategoryForm = () => {
     code: '',
     has_stock: false,
     min_stock: 0,
+    max_stock: 0,
+    current_stock: 0,
     unit: '',
+    reorder_point: 0,
     notes: ''
   });
 
@@ -69,7 +76,10 @@ const CategoryForm = () => {
         code: currentCategory.code || '',
         has_stock: currentCategory.has_stock || false,
         min_stock: currentCategory.min_stock || 0,
+        max_stock: currentCategory.max_stock || 0,
+        current_stock: currentCategory.current_stock || 0,
         unit: currentCategory.unit || '',
+        reorder_point: currentCategory.reorder_point || 0,
         notes: currentCategory.notes || ''
       });
     }
@@ -80,20 +90,48 @@ const CategoryForm = () => {
 
     if (!formData.name.trim()) {
       newErrors.name = 'Category name is required';
+    } else if (formData.name.trim().length < 2 || formData.name.trim().length > 50) {
+      newErrors.name = 'Category name must be between 2 and 50 characters';
     }
 
     if (!formData.code.trim()) {
       newErrors.code = 'Category code is required';
-    } else if (formData.code.length !== 3) {
-      newErrors.code = 'Category code must be exactly 3 characters';
+    } else if (formData.code.trim().length < 2 || formData.code.trim().length > 3) {
+      newErrors.code = 'Category code must be between 2 and 3 characters';
+    } else if (!/^[A-Z]+$/.test(formData.code.trim())) {
+      newErrors.code = 'Category code must contain only uppercase letters';
     }
 
-    if (formData.has_stock && formData.min_stock < 0) {
-      newErrors.min_stock = 'Minimum stock cannot be negative';
+    if (formData.has_stock) {
+      if (formData.min_stock < 0) {
+        newErrors.min_stock = 'Minimum stock cannot be negative';
+      }
+      
+      if (formData.max_stock < 0) {
+        newErrors.max_stock = 'Maximum stock cannot be negative';
+      }
+      
+      if (formData.current_stock < 0) {
+        newErrors.current_stock = 'Current stock cannot be negative';
+      }
+      
+      if (formData.min_stock > formData.max_stock) {
+        newErrors.min_stock = 'Minimum stock cannot be greater than maximum stock';
+      }
+      
+      if (formData.reorder_point < 0) {
+        newErrors.reorder_point = 'Reorder point cannot be negative';
+      }
+
+      if (!formData.unit.trim()) {
+        newErrors.unit = 'Stock unit is required when stock tracking is enabled';
+      } else if (formData.unit.trim().length > 20) {
+        newErrors.unit = 'Unit cannot exceed 20 characters';
+      }
     }
 
-    if (formData.has_stock && !formData.unit.trim()) {
-      newErrors.unit = 'Stock unit is required when stock tracking is enabled';
+    if (formData.notes && formData.notes.length > 1000) {
+      newErrors.notes = 'Notes cannot exceed 1000 characters';
     }
 
     setErrors(newErrors);
@@ -117,7 +155,10 @@ const CategoryForm = () => {
           code: formData.code.trim().toUpperCase(),
           has_stock: formData.has_stock,
           min_stock: formData.has_stock ? formData.min_stock : 0,
+          max_stock: formData.has_stock ? formData.max_stock : 0,
+          current_stock: formData.has_stock ? formData.current_stock : 0,
           unit: formData.has_stock ? formData.unit.trim() : '',
+          reorder_point: formData.has_stock ? formData.reorder_point : 0,
           notes: formData.notes.trim()
         };
         success = await updateCategory(parseInt(id), updateData);
@@ -127,7 +168,10 @@ const CategoryForm = () => {
           code: formData.code.trim().toUpperCase(),
           has_stock: formData.has_stock,
           min_stock: formData.has_stock ? formData.min_stock : 0,
+          max_stock: formData.has_stock ? formData.max_stock : 0,
+          current_stock: formData.has_stock ? formData.current_stock : 0,
           unit: formData.has_stock ? formData.unit.trim() : '',
+          reorder_point: formData.has_stock ? formData.reorder_point : 0,
           notes: formData.notes.trim()
         };
         success = await createCategory(createData);
@@ -229,132 +273,28 @@ const CategoryForm = () => {
           ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}
         `}>
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {/* Category Name */}
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                darkMode ? 'text-gray-200' : 'text-gray-700'
-              }`}>
-                Category Name *
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder="Enter category name"
-                className={`
-                  w-full px-4 py-3 rounded-lg border transition-colors
-                  ${errors.name
-                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                    : darkMode
-                      ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
-                      : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
-                  }
-                  focus:outline-none focus:ring-2
-                `}
-              />
-              {errors.name && (
-                <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-              )}
-            </div>
-
-            {/* Category Code */}
-            <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                darkMode ? 'text-gray-200' : 'text-gray-700'
-              }`}>
-                Category Code *
-              </label>
-              <input
-                type="text"
-                value={formData.code}
-                onChange={(e) => handleInputChange('code', e.target.value.toUpperCase())}
-                placeholder="ELC"
-                maxLength={3}
-                className={`
-                  w-full px-4 py-3 rounded-lg border transition-colors uppercase
-                  ${errors.code
-                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                    : darkMode
-                      ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
-                      : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
-                  }
-                  focus:outline-none focus:ring-2
-                `}
-              />
-              <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                3-character unique code for this category
-              </p>
-              {errors.code && (
-                <p className="mt-1 text-sm text-red-600">{errors.code}</p>
-              )}
-            </div>
-
-            {/* Stock Tracking */}
-            <div>
-              <div className="flex items-center space-x-3">
-                <input
-                  type="checkbox"
-                  id="has_stock"
-                  checked={formData.has_stock}
-                  onChange={(e) => handleInputChange('has_stock', e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                />
-                <label htmlFor="has_stock" className={`text-sm font-medium ${
-                  darkMode ? 'text-gray-200' : 'text-gray-700'
-                }`}>
-                  Enable stock tracking for this category
-                </label>
-              </div>
-              <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                When enabled, products in this category will track stock levels
-              </p>
-            </div>
-
-            {/* Minimum Stock & Unit (only show if stock tracking enabled) */}
-            {formData.has_stock && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Basic Information Section */}
+            <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                Basic Information
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Category Name */}
                 <div>
                   <label className={`block text-sm font-medium mb-2 ${
                     darkMode ? 'text-gray-200' : 'text-gray-700'
                   }`}>
-                    Minimum Stock Level
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.min_stock}
-                    onChange={(e) => handleInputChange('min_stock', parseInt(e.target.value) || 0)}
-                    min="0"
-                    placeholder="0"
-                    className={`
-                      w-full px-4 py-3 rounded-lg border transition-colors
-                      ${errors.min_stock
-                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                        : darkMode
-                          ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
-                          : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
-                      }
-                      focus:outline-none focus:ring-2
-                    `}
-                  />
-                  {errors.min_stock && (
-                    <p className="mt-1 text-sm text-red-600">{errors.min_stock}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${
-                    darkMode ? 'text-gray-200' : 'text-gray-700'
-                  }`}>
-                    Stock Unit *
+                    Category Name *
                   </label>
                   <input
                     type="text"
-                    value={formData.unit}
-                    onChange={(e) => handleInputChange('unit', e.target.value)}
-                    placeholder="pcs, kg, liters, etc."
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    placeholder="Enter category name"
                     className={`
                       w-full px-4 py-3 rounded-lg border transition-colors
-                      ${errors.unit
+                      ${errors.name
                         ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
                         : darkMode
                           ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
@@ -363,34 +303,262 @@ const CategoryForm = () => {
                       focus:outline-none focus:ring-2
                     `}
                   />
-                  {errors.unit && (
-                    <p className="mt-1 text-sm text-red-600">{errors.unit}</p>
+                  {errors.name && (
+                    <p className="mt-1 text-sm text-red-600">{errors.name}</p>
+                  )}
+                </div>
+
+                {/* Category Code */}
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${
+                    darkMode ? 'text-gray-200' : 'text-gray-700'
+                  }`}>
+                    Category Code *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.code}
+                    onChange={(e) => handleInputChange('code', e.target.value.toUpperCase())}
+                    placeholder="RTR"
+                    maxLength={3}
+                    className={`
+                      w-full px-4 py-3 rounded-lg border transition-colors uppercase
+                      ${errors.code
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                        : darkMode
+                          ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                          : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+                      }
+                      focus:outline-none focus:ring-2
+                    `}
+                  />
+                  <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    2-3 character unique code for this category (uppercase letters only)
+                  </p>
+                  {errors.code && (
+                    <p className="mt-1 text-sm text-red-600">{errors.code}</p>
                   )}
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Notes */}
+            {/* Stock Tracking Section */}
+            <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                Stock Tracking Settings
+              </h3>
+              
+              {/* Enable Stock Tracking */}
+              <div className="mb-6">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="has_stock"
+                    checked={formData.has_stock}
+                    onChange={(e) => handleInputChange('has_stock', e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                  <label htmlFor="has_stock" className={`text-sm font-medium ${
+                    darkMode ? 'text-gray-200' : 'text-gray-700'
+                  }`}>
+                    Enable stock tracking for this category
+                  </label>
+                </div>
+                <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  When enabled, categories will track current stock, minimum/maximum levels, and reorder points
+                </p>
+              </div>
+
+              {/* Stock Configuration (only show if stock tracking enabled) */}
+              {formData.has_stock && (
+                <div className="space-y-6">
+                  {/* Stock Levels */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${
+                        darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
+                        Current Stock *
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.current_stock}
+                        onChange={(e) => handleInputChange('current_stock', parseInt(e.target.value) || 0)}
+                        min="0"
+                        placeholder="0"
+                        className={`
+                          w-full px-4 py-3 rounded-lg border transition-colors
+                          ${errors.current_stock
+                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                            : darkMode
+                              ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                              : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+                          }
+                          focus:outline-none focus:ring-2
+                        `}
+                      />
+                      {errors.current_stock && (
+                        <p className="mt-1 text-sm text-red-600">{errors.current_stock}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${
+                        darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
+                        Minimum Stock *
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.min_stock}
+                        onChange={(e) => handleInputChange('min_stock', parseInt(e.target.value) || 0)}
+                        min="0"
+                        placeholder="0"
+                        className={`
+                          w-full px-4 py-3 rounded-lg border transition-colors
+                          ${errors.min_stock
+                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                            : darkMode
+                              ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                              : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+                          }
+                          focus:outline-none focus:ring-2
+                        `}
+                      />
+                      {errors.min_stock && (
+                        <p className="mt-1 text-sm text-red-600">{errors.min_stock}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${
+                        darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
+                        Maximum Stock *
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.max_stock}
+                        onChange={(e) => handleInputChange('max_stock', parseInt(e.target.value) || 0)}
+                        min="0"
+                        placeholder="0"
+                        className={`
+                          w-full px-4 py-3 rounded-lg border transition-colors
+                          ${errors.max_stock
+                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                            : darkMode
+                              ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                              : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+                          }
+                          focus:outline-none focus:ring-2
+                        `}
+                      />
+                      {errors.max_stock && (
+                        <p className="mt-1 text-sm text-red-600">{errors.max_stock}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Unit and Reorder Point */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${
+                        darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
+                        Stock Unit *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.unit}
+                        onChange={(e) => handleInputChange('unit', e.target.value)}
+                        placeholder="pcs, kg, liters, etc."
+                        className={`
+                          w-full px-4 py-3 rounded-lg border transition-colors
+                          ${errors.unit
+                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                            : darkMode
+                              ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                              : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+                          }
+                          focus:outline-none focus:ring-2
+                        `}
+                      />
+                      {errors.unit && (
+                        <p className="mt-1 text-sm text-red-600">{errors.unit}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${
+                        darkMode ? 'text-gray-200' : 'text-gray-700'
+                      }`}>
+                        Reorder Point *
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.reorder_point}
+                        onChange={(e) => handleInputChange('reorder_point', parseInt(e.target.value) || 0)}
+                        min="0"
+                        placeholder="0"
+                        className={`
+                          w-full px-4 py-3 rounded-lg border transition-colors
+                          ${errors.reorder_point
+                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                            : darkMode
+                              ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                              : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+                          }
+                          focus:outline-none focus:ring-2
+                        `}
+                      />
+                      <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Alert when stock falls below this level
+                      </p>
+                      {errors.reorder_point && (
+                        <p className="mt-1 text-sm text-red-600">{errors.reorder_point}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Additional Information */}
             <div>
-              <label className={`block text-sm font-medium mb-2 ${
-                darkMode ? 'text-gray-200' : 'text-gray-700'
-              }`}>
-                Notes
-              </label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => handleInputChange('notes', e.target.value)}
-                rows={4}
-                placeholder="Additional information about this category..."
-                className={`
-                  w-full px-4 py-3 rounded-lg border transition-colors resize-none
-                  ${darkMode
-                    ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
-                    : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
-                  }
-                  focus:outline-none focus:ring-2
-                `}
-              />
+              <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                Additional Information
+              </h3>
+              
+              {/* Notes */}
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${
+                  darkMode ? 'text-gray-200' : 'text-gray-700'
+                }`}>
+                  Notes
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => handleInputChange('notes', e.target.value)}
+                  rows={4}
+                  placeholder="Additional information about this category..."
+                  className={`
+                    w-full px-4 py-3 rounded-lg border transition-colors resize-none
+                    ${errors.notes
+                      ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                      : darkMode
+                        ? 'border-gray-600 focus:border-indigo-500 focus:ring-indigo-500 bg-gray-700 text-white placeholder-gray-400'
+                        : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 bg-white text-gray-900 placeholder-gray-500'
+                    }
+                    focus:outline-none focus:ring-2
+                  `}
+                />
+                <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {formData.notes.length}/1000 characters
+                </p>
+                {errors.notes && (
+                  <p className="mt-1 text-sm text-red-600">{errors.notes}</p>
+                )}
+              </div>
             </div>
 
             {/* Form Actions */}

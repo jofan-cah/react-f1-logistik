@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -19,7 +18,8 @@ import {
   Printer,
   QrCode,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Activity
 } from 'lucide-react';
 import { useTransactionStore } from '../../store/useTransactionStore';
 import {
@@ -148,8 +148,7 @@ const QRCodeGenerator: React.FC<{
 
 const ITEM_STATUS_LABELS: Record<TransactionItem['status'], string> = {
   processed: 'Processed',
-  pending: 'Pending',
-  returned: 'Returned'
+  pending: 'Pending'
 };
 
 const TransactionDetail: React.FC = () => {
@@ -162,7 +161,6 @@ const TransactionDetail: React.FC = () => {
     isLoading,
     error,
     getTransactionById,
-    fetchTransactionItems,
     deleteTransaction,
     closeTransaction,
     reopenTransaction,
@@ -202,9 +200,6 @@ const TransactionDetail: React.FC = () => {
       navigate('/transactions');
       return;
     }
-
-    // Load transaction items
-    await fetchTransactionItems(transactionId);
   };
 
   const handleDelete = async () => {
@@ -281,7 +276,7 @@ const TransactionDetail: React.FC = () => {
         return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200';
       case 'lost':
         return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
-      case 'return':
+      case 'transfer':
         return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200';
       default:
         return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
@@ -294,8 +289,6 @@ const TransactionDetail: React.FC = () => {
         return <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400" />;
       case 'pending':
         return <Clock className="h-4 w-4 text-yellow-500 dark:text-yellow-400" />;
-      case 'returned':
-        return <CheckCircle className="h-4 w-4 text-blue-500 dark:text-blue-400" />;
       default:
         return <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />;
     }
@@ -394,7 +387,7 @@ const TransactionDetail: React.FC = () => {
             
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => navigate(`/transactions/${id}/edit`)}
+                onClick={() => navigate(`/transactions/edit/${id}`)}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
               >
                 <Edit className="h-4 w-4 mr-2" />
@@ -470,7 +463,8 @@ const TransactionDetail: React.FC = () => {
                     <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getTypeBadgeColor(transaction.transaction_type)}`}>
                       {TRANSACTION_TYPE_LABELS[transaction.transaction_type]}
                     </span>
-                    <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusBadgeColor(transaction.status)}`}>
+                    <span className={`inline-flex items-center px-3 py-1 text-sm font-semibold rounded-full ${getStatusBadgeColor(transaction.status)}`}>
+                      <Activity className="h-3 w-3 mr-1" />
                       {TRANSACTION_STATUS_LABELS[transaction.status]}
                     </span>
                   </div>
@@ -481,68 +475,6 @@ const TransactionDetail: React.FC = () => {
                     <div className="flex items-start space-x-3">
                       <User className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">First Person</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.first_person}</p>
-                      </div>
-                    </div>
-
-                    {transaction.second_person && (
-                      <div className="flex items-start space-x-3">
-                        <User className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">Second Person</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.second_person}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-start space-x-3">
-                      <MapPin className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">Location</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.location}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-start space-x-3">
-                      <Calendar className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">Transaction Date</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          {formatDate(transaction.transaction_date || transaction.created_at || '')}
-                        </p>
-                      </div>
-                    </div>
-
-                    {transaction.reference_no && (
-                      <div className="flex items-start space-x-3">
-                        <Hash className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">Reference Number</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.reference_no}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {transaction.created_by && (
-                      <div className="flex items-start space-x-3">
-                        <User className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">Created By</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-300">{transaction.created_by}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {transaction.notes && (
-                  <div className="mt-6">
-                    <div className="flex items-start space-x-3">
-                      <FileText className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-0.5" />
-                      <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900 dark:text-white">Notes</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">
                           {transaction.notes}
@@ -550,7 +482,7 @@ const TransactionDetail: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                )}
+              
               </div>
             </div>
 
@@ -597,7 +529,10 @@ const TransactionDetail: React.FC = () => {
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div>
                                 <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                  {item.Product?.name || 'Unknown Product'}
+                                  {item.Product?.brand && item.Product?.model 
+                                    ? `${item.Product.brand} ${item.Product.model}`
+                                    : item.Product?.name || 'Unknown Product'
+                                  }
                                 </div>
                                 <div className="text-sm text-gray-500 dark:text-gray-400">
                                   ID: {item.product_id}
@@ -655,8 +590,73 @@ const TransactionDetail: React.FC = () => {
 
           {/* Right column - QR Code and Summary */}
           <div className="lg:col-span-1">
-            {/* QR Code */}
+            {/* Transaction Status Card */}
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-medium text-gray-900 dark:text-white">Transaction Status</h2>
+              </div>
+              <div className="p-6">
+                <div className="flex items-center justify-center mb-4">
+                  <span className={`inline-flex items-center px-4 py-2 text-lg font-semibold rounded-full ${getStatusBadgeColor(transaction.status)}`}>
+                    <Activity className="h-5 w-5 mr-2" />
+                    {TRANSACTION_STATUS_LABELS[transaction.status]}
+                  </span>
+                </div>
+                
+                <div className="space-y-3">
+                  {transaction.status === 'open' && (
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                        This transaction is currently active and can be modified.
+                      </p>
+                      <button
+                        onClick={() => handleStatusChange('close')}
+                        disabled={statusChangeLoading}
+                        className="w-full flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors duration-200"
+                      >
+                        {statusChangeLoading ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                        )}
+                        Close Transaction
+                      </button>
+                    </div>
+                  )}
+                  
+                  {transaction.status === 'closed' && (
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                        This transaction has been completed and closed.
+                      </p>
+                      <button
+                        onClick={() => handleStatusChange('reopen')}
+                        disabled={statusChangeLoading}
+                        className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200"
+                      >
+                        {statusChangeLoading ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <XCircle className="h-4 w-4 mr-2" />
+                        )}
+                        Reopen Transaction
+                      </button>
+                    </div>
+                  )}
+                  
+                  {transaction.status === 'pending' && (
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        This transaction is pending and requires attention.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* QR Code */}
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700 mt-6">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-medium text-gray-900 dark:text-white">Transaction QR Code</h2>
               </div>
@@ -684,6 +684,12 @@ const TransactionDetail: React.FC = () => {
               <div className="p-6">
                 <div className="space-y-3">
                   <div className="flex justify-between">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Transaction Type:</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      {TRANSACTION_TYPE_LABELS[transaction.transaction_type]}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-sm text-gray-500 dark:text-gray-400">Total Items:</span>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">{totalItems}</span>
                   </div>
@@ -697,12 +703,14 @@ const TransactionDetail: React.FC = () => {
                       {transaction.created_at ? formatDate(transaction.created_at) : '-'}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">Status:</span>
-                    <span className={`text-sm font-medium px-2 py-1 rounded-full ${getStatusBadgeColor(transaction.status)}`}>
-                      {TRANSACTION_STATUS_LABELS[transaction.status]}
-                    </span>
-                  </div>
+                  {transaction.transaction_date && transaction.transaction_date !== transaction.created_at && (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Transaction Date:</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
+                        {formatDate(transaction.transaction_date)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -715,40 +723,12 @@ const TransactionDetail: React.FC = () => {
               <div className="p-6">
                 <div className="space-y-3">
                   <button
-                    onClick={() => navigate(`/transactions/${id}/edit`)}
+                    onClick={() => navigate(`/transactions/edit/${id}`)}
                     className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Transaction
                   </button>
-                  
-                  {transaction.status === 'open' ? (
-                    <button
-                      onClick={() => handleStatusChange('close')}
-                      disabled={statusChangeLoading}
-                      className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
-                    >
-                      {statusChangeLoading ? (
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                      )}
-                      Close Transaction
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleStatusChange('reopen')}
-                      disabled={statusChangeLoading}
-                      className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
-                    >
-                      {statusChangeLoading ? (
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <XCircle className="h-4 w-4 mr-2" />
-                      )}
-                      Reopen Transaction
-                    </button>
-                  )}
                   
                   <button
                     onClick={() => navigate('/scanner')}
@@ -757,14 +737,14 @@ const TransactionDetail: React.FC = () => {
                     <QrCode className="h-4 w-4 mr-2" />
                     Use Scanner
                   </button>
-{/*                   
+                  
                   <button
-                    onClick={() => window.print()}
-                    className="w-full flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
+                    onClick={() => navigate('/transactions/new')}
+                    className="w-full flex items-center px-3 py-2 border border-green-300 dark:border-green-600 shadow-sm text-sm font-medium rounded-md text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors duration-200"
                   >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print Transaction
-                  </button> */}
+                    <Package className="h-4 w-4 mr-2" />
+                    New Transaction
+                  </button>
                 </div>
               </div>
             </div>
@@ -806,6 +786,7 @@ const TransactionDetail: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };
