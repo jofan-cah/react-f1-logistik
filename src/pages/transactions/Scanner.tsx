@@ -514,8 +514,8 @@ const Scanner: React.FC = () => {
     console.log('🔍 Search params:', Object.fromEntries(searchParams));
     loadProducts();
     
-    // NEW: Load tickets untuk checkout
-    if (getTransactionTypeFromParams() === 'check_out') {
+    // Load tickets untuk checkout DAN check-in
+    if (getTransactionTypeFromParams() === 'check_out' || getTransactionTypeFromParams() === 'check_in') {
       loadActiveTickets();
     }
   }, []);
@@ -539,8 +539,8 @@ const Scanner: React.FC = () => {
       setScanHistory([]);
       setSelectedTicket(''); // NEW: Reset selected ticket
       
-      // NEW: Load tickets jika berubah ke checkout
-      if (newType === 'check_out') {
+      // NEW: Load tickets jika checkout ATAU check-in
+      if (newType === 'check_out' || newType === 'check_in') {
         loadActiveTickets();
       }
     } else {
@@ -1063,9 +1063,13 @@ const Scanner: React.FC = () => {
                 {currentTransaction.transaction_type === 'lost' && (
                   <p className="mt-1 font-medium">⚠️ Detailed notes required explaining circumstances</p>
                 )}
-                {/* NEW: Ticket info */}
+                {/* NEW: Ticket info untuk checkout only */}
                 {currentTransaction.transaction_type === 'check_out' && (
                   <p className="mt-1 font-medium">🎫 Ticket selection available for products requiring integration</p>
+                )}
+                {/* NEW: Ticket clearing info untuk check-in */}
+                {currentTransaction.transaction_type === 'check_in' && (
+                  <p className="mt-1 font-medium">🧹 Tickets will be automatically cleared from returned assets</p>
                 )}
               </div>
             </div>
@@ -1149,8 +1153,8 @@ const Scanner: React.FC = () => {
               </div>
             </div>
 
-            {/* NEW: Ticket Selection untuk checkout */}
-            {currentTransaction.transaction_type === 'check_out' && (
+            {/* Ticket Selection untuk checkout DAN check-in */}
+            {(currentTransaction.transaction_type === 'check_out' || currentTransaction.transaction_type === 'check_in') && (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
                 <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                   <h2 className="text-lg font-medium text-gray-900 dark:text-white flex items-center">
@@ -1163,6 +1167,7 @@ const Scanner: React.FC = () => {
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Select Ticket {productsRequiringTicket > 0 && <span className="text-red-500">*</span>}
+                      {currentTransaction.transaction_type === 'check_in' && <span className="text-blue-500"> (Optional)</span>}
                     </label>
                     <select
                       value={selectedTicket}
@@ -1190,7 +1195,10 @@ const Scanner: React.FC = () => {
                       </p>
                     )}
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      This ticket will be assigned to all products that require ticket integration
+                      {currentTransaction.transaction_type === 'check_out' 
+                        ? 'This ticket will be assigned to all products that require ticket integration'
+                        : 'This ticket will be assigned to returned products (optional for check-in)'
+                      }
                     </p>
                   </div>
 
@@ -1523,8 +1531,8 @@ const Scanner: React.FC = () => {
                     <span className="text-sm text-gray-500 dark:text-gray-400">
                       {totalItems} items, {totalQuantity} total quantity
                     </span>
-                    {/* NEW: Ticket info in header */}
-                    {currentTransaction.transaction_type === 'check_out' && selectedTicket && (
+                    {/* Ticket info di header untuk checkout dan check-in */}
+                    {(currentTransaction.transaction_type === 'check_out' || currentTransaction.transaction_type === 'check_in') && selectedTicket && (
                       <span className="text-sm text-blue-600 dark:text-blue-400 font-mono">
                         <Ticket className="inline h-3 w-3 mr-1" />
                         {selectedTicket}
@@ -1598,7 +1606,7 @@ const Scanner: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                {/* NEW: Ticket integration indicator */}
+                                {/* Ticket integration indicator - show only untuk context */}
                                 {item.product?.is_linked_to_ticketing && (
                                   <div className="mt-1 flex items-center text-xs">
                                     <Ticket className="h-3 w-3 mr-1" />
@@ -1609,11 +1617,25 @@ const Scanner: React.FC = () => {
                                           {selectedTicket}
                                         </span>
                                       </span>
-                                    ) : (
+                                    ) : currentTransaction.transaction_type === 'check_in' && selectedTicket ? (
+                                      <span className="text-blue-600 dark:text-blue-400">
+                                        Will be assigned to: 
+                                        <span className="ml-1 font-mono bg-blue-100 dark:bg-blue-900/30 px-1 rounded">
+                                          {selectedTicket}
+                                        </span>
+                                      </span>
+                                    ) : currentTransaction.transaction_type === 'check_in' && item.product?.ticketing_id ? (
+                                      <span className="text-orange-600 dark:text-orange-400">
+                                        Current ticket: 
+                                        <span className="ml-1 font-mono bg-orange-100 dark:bg-orange-900/30 px-1 rounded">
+                                          {item.product.ticketing_id}
+                                        </span>
+                                      </span>
+                                    ) : currentTransaction.transaction_type === 'check_out' ? (
                                       <span className="text-orange-600 dark:text-orange-400">
                                         Requires ticket assignment
                                       </span>
-                                    )}
+                                    ) : null}
                                   </div>
                                 )}
                               </div>
@@ -1784,4 +1806,4 @@ const Scanner: React.FC = () => {
   );
 };
 
-export default Scanner;
+export default Scanner; 
