@@ -1,4 +1,4 @@
-// src/pages/transactions/TransactionForm.tsx - Single Ticket Selection
+// src/pages/transactions/TransactionForm.tsx - Check-in & Check-out Ticket Selection
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -40,6 +40,24 @@ const ticketService = {
     } catch (error) {
       console.error('Error fetching active tickets:', error);
       return [];
+    }
+  },
+  
+  // NEW: Service untuk mengambil tickets yang sedang digunakan oleh produk tertentu
+  getProductTickets: async (productIds: string[]): Promise<{ [productId: string]: string }> => {
+    try {
+      const response = await fetch('https://befast.fiberone.net.id/api/products/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_ids: productIds })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch product tickets');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching product tickets:', error);
+      return {};
     }
   }
 };
@@ -83,8 +101,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
   const [items, setItems] = useState<CreateTransactionItemRequest[]>([]);
   
-  // NEW: Single ticket selection untuk seluruh transaksi
+  // MODIFIED: Ticket selection untuk check-out dan check-in
   const [selectedTicket, setSelectedTicket] = useState<string>('');
+  
+  // NEW: Untuk check-in, kita track ticket yang sedang digunakan produk
+  const [productTickets, setProductTickets] = useState<{ [productId: string]: string }>({});
   
   const [showAddItem, setShowAddItem] = useState(false);
   const [searchProduct, setSearchProduct] = useState('');
@@ -111,8 +132,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
     loadProducts();
     
-    // Hanya load tickets untuk checkout
-    if (formData.transaction_type === 'check_out') {
+    // MODIFIED: Load tickets untuk checkout dan check-in
+    if (['check_out', 'check_in'].includes(formData.transaction_type || '')) {
       loadActiveTickets();
     }
 
@@ -137,6 +158,20 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       setActiveTickets([]);
     } finally {
       setLoadingTickets(false);
+    }
+  };
+
+  // NEW: Load product tickets untuk check-in
+  const loadProductTickets = async (productIds: string[]) => {
+    if (productIds.length === 0) return;
+    
+    try {
+      console.log('🎫 Loading product tickets for check-in...');
+      const tickets = await ticketService.getProductTickets(productIds);
+      setProductTickets(tickets);
+      console.log('✅ Product tickets loaded:', tickets);
+    } catch (error: any) {
+      console.error('❌ Failed to load product tickets:', error);
     }
   };
 
@@ -177,15 +212,24 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     if (formData.transaction_type) {
       loadProducts();
       
-      // Load tickets jika checkout
-      if (formData.transaction_type === 'check_out') {
+      // MODIFIED: Load tickets untuk checkout dan check-in
+      if (['check_out', 'check_in'].includes(formData.transaction_type)) {
         loadActiveTickets();
       } else {
-        // Clear ticket selection jika bukan checkout
+        // Clear ticket selection jika bukan checkout/check-in
         setSelectedTicket('');
+        setProductTickets({});
       }
     }
   }, [formData.transaction_type]);
+
+  // NEW: Effect untuk load product tickets saat items berubah pada check-in
+  useEffect(() => {
+    if (formData.transaction_type === 'check_in' && items.length > 0) {
+      const productIds = items.map(item => item.product_id);
+      loadProductTickets(productIds);
+    }
+  }, [items, formData.transaction_type]);
 
   useEffect(() => {
     if (currentTransaction && mode === 'edit') {
@@ -212,7 +256,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
       setItems(formattedItems);
 
-      // NEW: Set ticket jika ada produk yang memiliki ticket yang sama
+      // MODIFIED: Set ticket berdasarkan transaction type
       if (transactionItems.length > 0) {
         const firstProductWithTicket = transactionItems.find(item => item.product?.ticketing_id);
         if (firstProductWithTicket?.product?.ticketing_id) {
@@ -267,15 +311,15 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       errors.items = 'At least one item is required';
     }
 
-    // NEW: Validasi ticket untuk checkout dengan produk yang require ticket
-    if (formData.transaction_type === 'check_out') {
+    // MODIFIED: Validasi ticket untuk checkout dan check-in
+    if (['check_out', 'check_in'].includes(formData.transaction_type || '')) {
       const hasProductsRequiringTicket = items.some(item => {
         const product = getProductById(item.product_id);
         return product?.is_linked_to_ticketing;
       });
 
       if (hasProductsRequiringTicket && !selectedTicket) {
-        errors.selectedTicket = 'Ticket selection is required for products with ticket integration';
+        errors.selectedTicket = `Ticket selection is required for products with ticket integration`;
       }
     }
 
@@ -310,7 +354,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     }
   };
 
-  // NEW: Handle ticket selection
+  // Handle ticket selection
   const handleTicketSelection = (ticketId: string) => {
     setSelectedTicket(ticketId);
     
@@ -371,7 +415,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
     try {
       if (mode === 'create') {
-        // NEW: Enhanced create data dengan single ticket
+        // MODIFIED: Enhanced create data dengan ticket untuk check-out dan check-in
         const createData: CreateTransactionRequest & { selected_ticket?: string } = {
           transaction_type: formData.transaction_type!,
           reference_no: formData.reference_no,
@@ -381,11 +425,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
           notes: formData.notes,
           status: formData.status,
           items: items,
-          // NEW: Kirim single ticket untuk semua produk yang require ticket
-          ...(selectedTicket && { selected_ticket: selectedTicket })
+          // MODIFIED: Kirim ticket untuk semua transaction type yang support ticket
+          ...(selectedTicket && ['check_out', 'check_in'].includes(formData.transaction_type!) && { selected_ticket: selectedTicket })
         };
 
-        console.log('🚀 Submitting transaction with single ticket:', {
+        console.log('🚀 Submitting transaction with ticket:', {
           transaction_type: createData.transaction_type,
           items_count: createData.items.length,
           selected_ticket: createData.selected_ticket
@@ -458,7 +502,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const totalItems = items.length;
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
   
-  // NEW: Check berapa produk yang require ticket
+  // MODIFIED: Check berapa produk yang require ticket untuk semua transaction type
   const productsRequiringTicket = items.filter(item => {
     const product = getProductById(item.product_id);
     return product?.is_linked_to_ticketing;
@@ -470,6 +514,16 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     product.model?.toLowerCase().includes(searchProduct.toLowerCase()) ||
     product.serial_number?.toLowerCase().includes(searchProduct.toLowerCase())
   );
+
+  // NEW: Helper function untuk mendapatkan ticket context berdasarkan transaction type
+  const getTicketContextMessage = () => {
+    if (formData.transaction_type === 'check_out') {
+      return "This ticket will be assigned to all products that require ticket integration";
+    } else if (formData.transaction_type === 'check_in') {
+      return "Select the ticket to return these products to";
+    }
+    return "";
+  };
 
   if (isLoading && mode === 'edit') {
     return (
@@ -593,12 +647,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       )}
                     </div>
 
-                    {/* NEW: Single Ticket Selection untuk Checkout */}
-                    {formData.transaction_type === 'check_out' && (
+                    {/* MODIFIED: Ticket Selection untuk Check-out dan Check-in */}
+                    {['check_out', 'check_in'].includes(formData.transaction_type || '') && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                           <Ticket className="inline h-4 w-4 mr-1" />
-                          Select Ticket {productsRequiringTicket > 0 && <span className="text-red-500">*</span>}
+                          {formData.transaction_type === 'check_out' ? 'Assign to Ticket' : 'Return to Ticket'} 
+                          {productsRequiringTicket > 0 && <span className="text-red-500"> *</span>}
                         </label>
                         <select
                           value={selectedTicket}
@@ -624,8 +679,24 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                           </p>
                         )}
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          This ticket will be assigned to all products that require ticket integration
+                          {getTicketContextMessage()}
                         </p>
+                        
+                        {/* NEW: Show current product tickets untuk check-in */}
+                        {formData.transaction_type === 'check_in' && Object.keys(productTickets).length > 0 && (
+                          <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-700">
+                            <p className="text-xs font-medium text-blue-800 dark:text-blue-300 mb-1">
+                              Current product tickets:
+                            </p>
+                            <div className="space-y-1">
+                              {Object.entries(productTickets).map(([productId, ticketId]) => (
+                                <div key={productId} className="text-xs text-blue-700 dark:text-blue-400">
+                                  {productId}: <span className="font-mono">{ticketId}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -663,10 +734,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="text-lg font-medium text-gray-900 dark:text-white">Items</h2>
-                      {formData.transaction_type === 'check_out' && selectedTicket && (
+                      {['check_out', 'check_in'].includes(formData.transaction_type || '') && selectedTicket && (
                         <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
                           <Ticket className="inline h-3 w-3 mr-1" />
-                          Selected ticket: <span className="font-mono">{selectedTicket}</span>
+                          {formData.transaction_type === 'check_out' ? 'Assigning to ticket:' : 'Returning to ticket:'} 
+                          <span className="font-mono ml-1">{selectedTicket}</span>
                         </p>
                       )}
                     </div>
@@ -707,6 +779,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       {items.map((item, index) => {
                         const product = getProductById(item.product_id);
                         const requiresTicket = product?.is_linked_to_ticketing;
+                        const currentTicket = productTickets[item.product_id];
                         
                         return (
                           <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -727,7 +800,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                                               'text-orange-600 dark:text-orange-400'
                                             }`}>{product.status}</span>
                                         </div>
-                                        {/* NEW: Ticket integration indicator */}
+                                        {/* MODIFIED: Enhanced ticket integration indicator */}
                                         {requiresTicket && (
                                           <div className="flex items-center text-xs">
                                             <Ticket className="h-3 w-3 mr-1" />
@@ -737,6 +810,21 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                                                 <span className="ml-1 font-mono bg-blue-100 dark:bg-blue-900/30 px-1 rounded">
                                                   {selectedTicket}
                                                 </span>
+                                              </span>
+                                            ) : formData.transaction_type === 'check_in' && currentTicket ? (
+                                              <span className="text-green-600 dark:text-green-400">
+                                                Currently assigned to: 
+                                                <span className="ml-1 font-mono bg-green-100 dark:bg-green-900/30 px-1 rounded">
+                                                  {currentTicket}
+                                                </span>
+                                                {selectedTicket && selectedTicket !== currentTicket && (
+                                                  <span className="block mt-1 text-orange-600 dark:text-orange-400">
+                                                    → Will be moved to: 
+                                                    <span className="ml-1 font-mono bg-orange-100 dark:bg-orange-900/30 px-1 rounded">
+                                                      {selectedTicket}
+                                                    </span>
+                                                  </span>
+                                                )}
                                               </span>
                                             ) : (
                                               <span className="text-orange-600 dark:text-orange-400">
@@ -864,8 +952,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       <span className="text-sm font-medium text-gray-900 dark:text-white">{totalQuantity}</span>
                     </div>
                     
-                    {/* NEW: Ticket Summary */}
-                    {formData.transaction_type === 'check_out' && (
+                    {/* MODIFIED: Ticket Summary untuk Check-out dan Check-in */}
+                    {['check_out', 'check_in'].includes(formData.transaction_type || '') && (
                       <>
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-500 dark:text-gray-400">Require Tickets:</span>
@@ -875,10 +963,36 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         </div>
                         {selectedTicket && (
                           <div className="flex justify-between">
-                            <span className="text-sm text-gray-500 dark:text-gray-400">Selected Ticket:</span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              {formData.transaction_type === 'check_out' ? 'Assign to:' : 'Return to:'}
+                            </span>
                             <span className="text-sm font-medium text-blue-600 dark:text-blue-400 font-mono">
                               {selectedTicket}
                             </span>
+                          </div>
+                        )}
+                        
+                        {/* NEW: Show current tickets summary untuk check-in */}
+                        {formData.transaction_type === 'check_in' && Object.keys(productTickets).length > 0 && (
+                          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <div className="flex justify-between items-start mb-2">
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Current Tickets:</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {Object.keys(productTickets).length} items
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {Object.entries(productTickets).slice(0, 3).map(([productId, ticketId]) => (
+                                <div key={productId} className="text-xs text-gray-600 dark:text-gray-400">
+                                  <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{ticketId}</span>
+                                </div>
+                              ))}
+                              {Object.keys(productTickets).length > 3 && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  +{Object.keys(productTickets).length - 3} more
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </>
@@ -912,8 +1026,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       </div>
                     </div>
 
-                    {/* NEW: Active Tickets Summary untuk Checkout */}
-                    {formData.transaction_type === 'check_out' && activeTickets.length > 0 && (
+                    {/* MODIFIED: Active Tickets Summary untuk Check-out dan Check-in */}
+                    {['check_out', 'check_in'].includes(formData.transaction_type || '') && activeTickets.length > 0 && (
                       <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -984,7 +1098,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
         </form>
       </div>
 
-      {/* Add Item Modal dengan Ticket Integration Info */}
+      {/* MODIFIED: Add Item Modal dengan Enhanced Ticket Integration Info */}
       {showAddItem && (
         <div className="fixed inset-0 bg-gray-600 dark:bg-gray-900 bg-opacity-50 dark:bg-opacity-75 overflow-y-auto h-full w-full z-50">
           <div className="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-700 w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
@@ -1002,10 +1116,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                             : 'Showing all items'}
                       </p>
                     )}
-                    {formData.transaction_type === 'check_out' && selectedTicket && (
+                    {['check_out', 'check_in'].includes(formData.transaction_type || '') && selectedTicket && (
                       <p className="text-xs text-blue-600 dark:text-blue-400">
                         <Ticket className="inline h-3 w-3 mr-1" />
-                        Selected ticket: <span className="font-mono">{selectedTicket}</span>
+                        {formData.transaction_type === 'check_out' ? 'Assigning to:' : 'Returning to:'} 
+                        <span className="font-mono ml-1">{selectedTicket}</span>
                       </p>
                     )}
                   </div>
@@ -1105,11 +1220,23 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                               </div>
                               <div className="text-sm text-gray-500 dark:text-gray-400">ID: {product.product_id}</div>
 
-                              {/* NEW: Ticket integration indicator */}
+                              {/* MODIFIED: Enhanced ticket integration indicator */}
                               {product.is_linked_to_ticketing && (
-                                <div className="flex items-center mt-1 text-xs text-blue-600 dark:text-blue-400">
+                                <div className="flex items-center mt-1 text-xs">
                                   <Ticket className="h-3 w-3 mr-1" />
-                                  <span>Will use selected ticket</span>
+                                  {formData.transaction_type === 'check_out' ? (
+                                    <span className="text-blue-600 dark:text-blue-400">
+                                      Will use selected ticket
+                                    </span>
+                                  ) : formData.transaction_type === 'check_in' ? (
+                                    <span className="text-green-600 dark:text-green-400">
+                                      Has current ticket assignment
+                                    </span>
+                                  ) : (
+                                    <span className="text-purple-600 dark:text-purple-400">
+                                      Ticket-enabled
+                                    </span>
+                                  )}
                                 </div>
                               )}
 
@@ -1144,7 +1271,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                                   Added
                                 </span>
                               )}
-                              {product.is_linked_to_ticketing && formData.transaction_type === 'check_out' && (
+                              {product.is_linked_to_ticketing && ['check_out', 'check_in'].includes(formData.transaction_type || '') && (
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
                                   <Ticket className="h-3 w-3 mr-1" />
                                   Ticket
