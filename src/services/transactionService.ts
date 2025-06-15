@@ -1,4 +1,4 @@
-// src/services/transactionService.ts
+// src/services/transactionService.ts - FINAL VERSION dengan ticket support
 import api from './api';
 import {
   Transaction,
@@ -13,13 +13,20 @@ import {
   ApiResponse
 } from '../types/transaction.types';
 
+// Simple ticket service untuk validasi format
+export const ticketService = {
+  // Basic format validation
+  validateTicketFormat(ticketId: string): boolean {
+    return typeof ticketId === 'string' && ticketId.length >= 3 && ticketId.length <= 50;
+  }
+};
+
 export const transactionService = {
-  // Get all transactions with filtering (matches backend pagination response)
+  // Get all transactions with filtering
   async getTransactions(params: TransactionQueryParams = {}): Promise<TransactionListResponse> {
     try {
       console.log('TransactionService - Getting transactions with params:', params);
       
-      // Build query string
       const queryParams = new URLSearchParams();
       
       if (params.page) queryParams.append('page', params.page.toString());
@@ -40,7 +47,6 @@ export const transactionService = {
       const response = await api.get(url);
       console.log('TransactionService - Response:', response.data);
       
-      // Backend returns paginated response
       if (response.data.success) {
         return {
           success: true,
@@ -80,12 +86,12 @@ export const transactionService = {
     }
   },
 
-  // Create new transaction (matches backend validation)
+  // Create transaction dengan selected_ticket support
   async createTransaction(data: CreateTransactionRequest): Promise<TransactionResponse> {
     try {
       console.log('TransactionService - Creating transaction:', data);
       
-      // Frontend validation before sending to backend
+      // Frontend validation
       if (!data.transaction_type || !data.first_person || !data.location) {
         throw new Error('Transaction type, first person, and location are required');
       }
@@ -94,7 +100,7 @@ export const transactionService = {
         throw new Error('At least one item is required');
       }
       
-      // Validate transaction type matches backend
+      // Validate transaction type
       const validTypes = ['check_out', 'check_in', 'transfer', 'maintenance', 'repair', 'lost'];
       if (!validTypes.includes(data.transaction_type)) {
         throw new Error('Invalid transaction type');
@@ -106,6 +112,20 @@ export const transactionService = {
           throw new Error('Product ID is required for all items');
         }
       }
+      
+      // Basic ticket validation untuk checkout
+      if (data.transaction_type === 'check_out' && data.selected_ticket) {
+        if (!ticketService.validateTicketFormat(data.selected_ticket)) {
+          throw new Error('Invalid ticket format');
+        }
+        console.log('🎫 Selected ticket for checkout:', data.selected_ticket);
+      }
+      
+      console.log('📤 Sending request to backend with selected_ticket:', {
+        transaction_type: data.transaction_type,
+        selected_ticket: data.selected_ticket || 'none',
+        items_count: data.items.length
+      });
       
       const response = await api.post('/transactions', data);
       
@@ -167,7 +187,7 @@ export const transactionService = {
     }
   },
 
-  // Close transaction (backend endpoint)
+  // Close transaction
   async closeTransaction(id: number): Promise<TransactionResponse> {
     try {
       console.log('TransactionService - Closing transaction:', id);
@@ -189,7 +209,7 @@ export const transactionService = {
     }
   },
 
-  // Reopen transaction (update status to open)
+  // Reopen transaction
   async reopenTransaction(id: number): Promise<TransactionResponse> {
     try {
       console.log('TransactionService - Reopening transaction:', id);
@@ -201,7 +221,7 @@ export const transactionService = {
     }
   },
 
-  // Add item to transaction (backend endpoint)
+  // Add item to transaction
   async addTransactionItem(
     transactionId: number, 
     itemData: {
@@ -234,7 +254,7 @@ export const transactionService = {
     }
   },
 
-  // Remove item from transaction (backend endpoint)
+  // Remove item from transaction
   async removeTransactionItem(transactionId: number, itemId: number): Promise<ApiResponse<null>> {
     try {
       console.log('TransactionService - Removing item from transaction:', { transactionId, itemId });
@@ -255,7 +275,7 @@ export const transactionService = {
     }
   },
 
-  // Get transaction statistics (backend endpoint)
+  // Get transaction statistics
   async getTransactionStats(): Promise<ApiResponse<TransactionStats>> {
     try {
       console.log('TransactionService - Getting transaction stats from backend');
@@ -277,7 +297,7 @@ export const transactionService = {
     }
   },
 
-  // Generate QR code for transaction (backend endpoint)
+  // Generate QR code for transaction
   async generateTransactionQRCode(id: number): Promise<ApiResponse<{
     transaction_id: number;
     qr_code: {
@@ -323,7 +343,7 @@ export const transactionService = {
     }
   },
 
-  // Utility function to validate transaction data
+  // Enhanced validation dengan ticket support
   validateTransactionData(data: CreateTransactionRequest): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
     
@@ -379,13 +399,20 @@ export const transactionService = {
       });
     }
     
+    // Validate ticket untuk checkout (format only)
+    if (data.transaction_type === 'check_out' && data.selected_ticket) {
+      if (!ticketService.validateTicketFormat(data.selected_ticket)) {
+        errors.push('Selected ticket has invalid format');
+      }
+    }
+    
     return {
       isValid: errors.length === 0,
       errors
     };
   },
 
-  // Utility function to format transaction type
+  // Utility functions
   formatTransactionType(type: string): string {
     const typeMap: { [key: string]: string } = {
       'check_out': 'Check Out',
@@ -398,7 +425,6 @@ export const transactionService = {
     return typeMap[type] || type;
   },
 
-  // Utility function to get transaction type color
   getTransactionTypeColor(type: string): string {
     const colorMap: { [key: string]: string } = {
       'check_out': 'text-green-600',
@@ -411,7 +437,6 @@ export const transactionService = {
     return colorMap[type] || 'text-gray-600';
   },
 
-  // Utility function to get status color
   getStatusColor(status: string): string {
     const colorMap: { [key: string]: string } = {
       'open': 'text-green-600',

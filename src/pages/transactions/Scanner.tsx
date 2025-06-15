@@ -1,4 +1,4 @@
-// src/pages/transactions/Scanner.tsx
+// src/pages/transactions/Scanner.tsx - Enhanced with Ticket Support
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
@@ -23,7 +23,8 @@ import {
   ArrowRightCircle,
   ArrowLeftCircle,
   Wrench,
-  AlertTriangle
+  AlertTriangle,
+  Ticket
 } from 'lucide-react';
 
 // Import ZXing library
@@ -41,6 +42,22 @@ import {
   CONDITION_OPTIONS
 } from '../../types/transaction.types';
 import { Product } from '../../types/product.types';
+
+// Service untuk mengambil data ticket aktif (sama seperti TransactionForm)
+const ticketService = {
+  getActiveTickets: async (): Promise<string[]> => {
+    try {
+      const response = await fetch('https://befast.fiberone.net.id/api/tickets/active-ids');
+      if (!response.ok) {
+        throw new Error('Failed to fetch active tickets');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching active tickets:', error);
+      return [];
+    }
+  }
+};
 
 // Enhanced interfaces untuk scanner
 interface ScanResult {
@@ -73,9 +90,11 @@ interface ScannerTransaction {
   notes?: string;
   status: Transaction['status'];
   items: ScannerTransactionItem[];
+  // NEW: Ticket support
+  selected_ticket?: string;
 }
 
-// Real-time Camera Scanner Component dengan ZXing
+// Real-time Camera Scanner Component dengan ZXing (unchanged)
 const RealTimeScanner: React.FC<{
   onScan: (data: string, type: 'QR' | 'BARCODE', format: string) => void;
   mode: 'QR' | 'BARCODE' | 'BOTH';
@@ -94,7 +113,6 @@ const RealTimeScanner: React.FC<{
   const scanningRef = useRef<boolean>(false);
   const lastScanTimeRef = useRef<number>(0);
 
-  // Initialize scanner when active
   useEffect(() => {
     if (active && !isInitialized) {
       initializeScanner();
@@ -446,6 +464,12 @@ const Scanner: React.FC = () => {
   const [scanFeedback, setScanFeedback] = useState<string | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanResult[]>([]);
 
+  // NEW: Ticket state
+  const [selectedTicket, setSelectedTicket] = useState<string>('');
+  const [activeTickets, setActiveTickets] = useState<string[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+
   // Transaction state - disesuaikan dengan URL params
   const [currentTransaction, setCurrentTransaction] = useState<ScannerTransaction>(() => {
     const initialType = getTransactionTypeFromParams();
@@ -456,12 +480,32 @@ const Scanner: React.FC = () => {
       first_person: '',
       location: '',
       status: 'open',
-      items: []
+      items: [],
+      selected_ticket: '' // NEW: Ticket support
     };
   });
   
   const [showForm, setShowForm] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  // NEW: Load active tickets
+  const loadActiveTickets = async () => {
+    setLoadingTickets(true);
+    setTicketError(null);
+
+    try {
+      console.log('🎫 Loading active tickets...');
+      const tickets = await ticketService.getActiveTickets();
+      setActiveTickets(tickets);
+      console.log('✅ Active tickets loaded:', tickets.length);
+    } catch (error: any) {
+      console.error('❌ Failed to load active tickets:', error);
+      setTicketError('Failed to load active tickets');
+      setActiveTickets([]);
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
 
   // Load products on component mount
   useEffect(() => {
@@ -469,6 +513,11 @@ const Scanner: React.FC = () => {
     console.log('🔍 Current URL:', window.location.href);
     console.log('🔍 Search params:', Object.fromEntries(searchParams));
     loadProducts();
+    
+    // NEW: Load tickets untuk checkout
+    if (getTransactionTypeFromParams() === 'check_out') {
+      loadActiveTickets();
+    }
   }, []);
 
   // Update transaction type when URL params change
@@ -484,9 +533,16 @@ const Scanner: React.FC = () => {
         ...prev,
         transaction_type: newType,
         reference_no: generateReferenceNumber(),
-        items: [] // Reset items when changing type
+        items: [], // Reset items when changing type
+        selected_ticket: '' // NEW: Reset ticket when changing type
       }));
       setScanHistory([]);
+      setSelectedTicket(''); // NEW: Reset selected ticket
+      
+      // NEW: Load tickets jika berubah ke checkout
+      if (newType === 'check_out') {
+        loadActiveTickets();
+      }
     } else {
       console.log('⏭️ Transaction type unchanged, skipping update');
     }
@@ -717,6 +773,20 @@ const Scanner: React.FC = () => {
     return { allowed: true };
   };
 
+  // NEW: Handle ticket selection
+  const handleTicketSelection = (ticketId: string) => {
+    setSelectedTicket(ticketId);
+    setCurrentTransaction(prev => ({
+      ...prev,
+      selected_ticket: ticketId
+    }));
+    
+    // Clear validation error
+    if (validationErrors.selectedTicket) {
+      setValidationErrors(prev => ({ ...prev, selectedTicket: '' }));
+    }
+  };
+
   const handleRemoveItem = (id: string) => {
     setCurrentTransaction(prev => ({
       ...prev,
@@ -759,6 +829,17 @@ const Scanner: React.FC = () => {
       errors.items = 'At least one item is required';
     }
 
+    // NEW: Validasi ticket untuk checkout dengan produk yang require ticket
+    if (currentTransaction.transaction_type === 'check_out') {
+      const hasProductsRequiringTicket = currentTransaction.items.some(item => {
+        return item.product?.is_linked_to_ticketing;
+      });
+
+      if (hasProductsRequiringTicket && !selectedTicket) {
+        errors.selectedTicket = 'Ticket selection is required for products with ticket integration';
+      }
+    }
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -788,10 +869,16 @@ const Scanner: React.FC = () => {
           condition_after: item.condition_after,
           status: item.status,
           notes: item.notes || ''
-        }))
+        })),
+        // NEW: Include selected ticket
+        ...(selectedTicket && { selected_ticket: selectedTicket })
       };
 
-      console.log('💾 Saving transaction:', transactionData);
+      console.log('💾 Saving transaction with ticket:', {
+        transaction_type: transactionData.transaction_type,
+        selected_ticket: transactionData.selected_ticket || 'none',
+        items_count: transactionData.items.length
+      });
 
       const success = await createTransaction(transactionData);
       
@@ -820,10 +907,12 @@ const Scanner: React.FC = () => {
       first_person: '',
       location: '',
       status: 'open',
-      items: []
+      items: [],
+      selected_ticket: '' // NEW: Reset ticket
     });
     setScanHistory([]);
     setValidationErrors({});
+    setSelectedTicket(''); // NEW: Reset selected ticket
     clearError();
   };
 
@@ -879,6 +968,11 @@ const Scanner: React.FC = () => {
   const config = getTransactionConfig();
   const totalItems = currentTransaction.items.length;
   const totalQuantity = currentTransaction.items.reduce((sum, item) => sum + item.quantity, 0);
+  
+  // NEW: Check berapa produk yang require ticket
+  const productsRequiringTicket = currentTransaction.items.filter(item => {
+    return item.product?.is_linked_to_ticketing;
+  }).length;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
@@ -969,6 +1063,10 @@ const Scanner: React.FC = () => {
                 {currentTransaction.transaction_type === 'lost' && (
                   <p className="mt-1 font-medium">⚠️ Detailed notes required explaining circumstances</p>
                 )}
+                {/* NEW: Ticket info */}
+                {currentTransaction.transaction_type === 'check_out' && (
+                  <p className="mt-1 font-medium">🎫 Ticket selection available for products requiring integration</p>
+                )}
               </div>
             </div>
           </div>
@@ -1051,7 +1149,115 @@ const Scanner: React.FC = () => {
               </div>
             </div>
 
-           
+            {/* NEW: Ticket Selection untuk checkout */}
+            {currentTransaction.transaction_type === 'check_out' && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
+                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                  <h2 className="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+                    <Ticket className="h-5 w-5 mr-2" />
+                    Ticket Selection
+                  </h2>
+                </div>
+                
+                <div className="p-6">
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Select Ticket {productsRequiringTicket > 0 && <span className="text-red-500">*</span>}
+                    </label>
+                    <select
+                      value={selectedTicket}
+                      onChange={(e) => handleTicketSelection(e.target.value)}
+                      disabled={loadingTickets}
+                      className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
+                        validationErrors.selectedTicket ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                      }`}
+                    >
+                      <option value="">
+                        {loadingTickets ? 'Loading tickets...' : 'Select a ticket...'}
+                      </option>
+                      {activeTickets.map(ticketId => (
+                        <option key={ticketId} value={ticketId}>
+                          {ticketId}
+                        </option>
+                      ))}
+                    </select>
+                    {validationErrors.selectedTicket && (
+                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.selectedTicket}</p>
+                    )}
+                    {ticketError && (
+                      <p className="mt-1 text-sm text-orange-600 dark:text-orange-400">
+                        ⚠️ {ticketError}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      This ticket will be assigned to all products that require ticket integration
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500 dark:text-gray-400">Products requiring tickets:</span>
+                      <span className="font-medium text-orange-600 dark:text-orange-400">
+                        {productsRequiringTicket}
+                      </span>
+                    </div>
+                    {selectedTicket && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">Selected ticket:</span>
+                        <span className="font-medium text-blue-600 dark:text-blue-400 font-mono">
+                          {selectedTicket}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Active Tickets Quick Select */}
+                  {activeTickets.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Quick select:</p>
+                      <div className="max-h-24 overflow-y-auto space-y-1">
+                        {activeTickets.slice(0, 5).map(ticketId => (
+                          <button
+                            key={ticketId}
+                            onClick={() => handleTicketSelection(ticketId)}
+                            className={`w-full text-left text-xs font-mono px-2 py-1 rounded transition-colors ${
+                              selectedTicket === ticketId 
+                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                          >
+                            {ticketId}
+                          </button>
+                        ))}
+                        {activeTickets.length > 5 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                            +{activeTickets.length - 5} more in dropdown
+                          </p>
+                        )}
+                      </div>
+                      
+                      <button
+                        onClick={loadActiveTickets}
+                        disabled={loadingTickets}
+                        className="mt-2 w-full text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 disabled:opacity-50"
+                      >
+                        {loadingTickets ? (
+                          <>
+                            <RefreshCw className="inline h-3 w-3 mr-1 animate-spin" />
+                            Refreshing...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="inline h-3 w-3 mr-1" />
+                            Refresh Tickets
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Transaction Summary */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
@@ -1075,6 +1281,27 @@ const Scanner: React.FC = () => {
                     <span className="text-sm text-gray-500 dark:text-gray-400">Total Quantity:</span>
                     <span className="text-sm font-medium text-gray-900 dark:text-white">{totalQuantity}</span>
                   </div>
+                  
+                  {/* NEW: Ticket Summary */}
+                  {currentTransaction.transaction_type === 'check_out' && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">Require Tickets:</span>
+                        <span className="text-sm font-medium text-orange-600 dark:text-orange-400">
+                          {productsRequiringTicket}
+                        </span>
+                      </div>
+                      {selectedTicket && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Selected Ticket:</span>
+                          <span className="text-sm font-medium text-blue-600 dark:text-blue-400 font-mono">
+                            {selectedTicket}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  
                   <div className="flex justify-between">
                     <span className="text-sm text-gray-500 dark:text-gray-400">Status:</span>
                     <span className={`text-sm font-medium ${
@@ -1296,6 +1523,13 @@ const Scanner: React.FC = () => {
                     <span className="text-sm text-gray-500 dark:text-gray-400">
                       {totalItems} items, {totalQuantity} total quantity
                     </span>
+                    {/* NEW: Ticket info in header */}
+                    {currentTransaction.transaction_type === 'check_out' && selectedTicket && (
+                      <span className="text-sm text-blue-600 dark:text-blue-400 font-mono">
+                        <Ticket className="inline h-3 w-3 mr-1" />
+                        {selectedTicket}
+                      </span>
+                    )}
                     {validationErrors.items && (
                       <span className="text-sm text-red-600">{validationErrors.items}</span>
                     )}
@@ -1364,6 +1598,24 @@ const Scanner: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
+                                {/* NEW: Ticket integration indicator */}
+                                {item.product?.is_linked_to_ticketing && (
+                                  <div className="mt-1 flex items-center text-xs">
+                                    <Ticket className="h-3 w-3 mr-1" />
+                                    {currentTransaction.transaction_type === 'check_out' && selectedTicket ? (
+                                      <span className="text-blue-600 dark:text-blue-400">
+                                        Will be assigned to: 
+                                        <span className="ml-1 font-mono bg-blue-100 dark:bg-blue-900/30 px-1 rounded">
+                                          {selectedTicket}
+                                        </span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-orange-600 dark:text-orange-400">
+                                        Requires ticket assignment
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>

@@ -1,14 +1,12 @@
-// src/pages/transactions/TransactionForm.tsx
+// src/pages/transactions/TransactionForm.tsx - Single Ticket Selection
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Save,
   Plus,
   Trash2,
-  ArrowLeft,
   User,
   MapPin,
-  Calendar,
   Hash,
   FileText,
   Package,
@@ -16,10 +14,10 @@ import {
   ScanLine,
   AlertCircle,
   X,
-  RefreshCw
+  RefreshCw,
+  Ticket
 } from 'lucide-react';
 import { useTransactionStore } from '../../store/useTransactionStore';
-// 1. UPDATE: Import yang disesuaikan
 import {
   Transaction,
   CreateTransactionRequest,
@@ -30,22 +28,28 @@ import {
 import { productService } from '../../services/productService';
 import { Product } from '../../types/product.types';
 
-// 2. UPDATE: Interface props (tambahkan ini jika belum ada)
+// Service untuk mengambil data ticket aktif
+const ticketService = {
+  getActiveTickets: async (): Promise<string[]> => {
+    try {
+      const response = await fetch('https://befast.fiberone.net.id/api/tickets/active-ids');
+      if (!response.ok) {
+        throw new Error('Failed to fetch active tickets');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching active tickets:', error);
+      return [];
+    }
+  }
+};
+
 interface TransactionFormProps {
   mode: 'create' | 'edit';
   defaultTransactionType?: string;
   hideTransactionTypeSelector?: boolean;
   requiredNotes?: boolean;
 }
-// 3. UPDATE: Condition options untuk dropdown
-const CONDITION_OPTIONS_FOR_FORM = [
-  'New',
-  'Good',
-  'Fair',
-  'Poor',
-  'Damaged'
-] as const;
-
 
 const TransactionForm: React.FC<TransactionFormProps> = ({
   mode,
@@ -67,7 +71,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     clearError
   } = useTransactionStore();
 
-  // 4. UPDATE: Initial formData dengan support untuk repair dan lost
   const [formData, setFormData] = useState<Partial<CreateTransactionRequest>>({
     transaction_type: defaultTransactionType || 'check_out',
     first_person: '',
@@ -77,7 +80,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     status: 'open',
     items: []
   });
+
   const [items, setItems] = useState<CreateTransactionItemRequest[]>([]);
+  
+  // NEW: Single ticket selection untuk seluruh transaksi
+  const [selectedTicket, setSelectedTicket] = useState<string>('');
+  
   const [showAddItem, setShowAddItem] = useState(false);
   const [searchProduct, setSearchProduct] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -88,72 +96,70 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [productError, setProductError] = useState<string | null>(null);
 
+  // Ticket state
+  const [activeTickets, setActiveTickets] = useState<string[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+
   useEffect(() => {
     if (mode === 'edit' && id) {
       loadTransaction();
     } else if (mode === 'create') {
-      // Generate reference number for new transaction
       const referenceNo = generateReferenceNumber();
       setFormData(prev => ({ ...prev, reference_no: referenceNo }));
     }
 
-    // Load products when component mounts
     loadProducts();
+    
+    // Hanya load tickets untuk checkout
+    if (formData.transaction_type === 'check_out') {
+      loadActiveTickets();
+    }
 
     return () => {
       clearCurrentTransaction();
     };
   }, [mode, id]);
 
-  // 5. UPDATE: Load products based on transaction type (dengan support repair dan lost)
+  // Load active tickets
+  const loadActiveTickets = async () => {
+    setLoadingTickets(true);
+    setTicketError(null);
+
+    try {
+      console.log('🎫 Loading active tickets...');
+      const tickets = await ticketService.getActiveTickets();
+      setActiveTickets(tickets);
+      console.log('✅ Active tickets loaded:', tickets.length);
+    } catch (error: any) {
+      console.error('❌ Failed to load active tickets:', error);
+      setTicketError('Failed to load active tickets');
+      setActiveTickets([]);
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
+
   const loadProducts = async () => {
     setLoadingProducts(true);
     setProductError(null);
 
     try {
-      console.log('🔄 Loading products from API...');
-      console.log('🎯 Transaction type:', formData.transaction_type);
-
       let statusFilter: string | undefined;
 
       if (formData.transaction_type === 'check_in') {
-        // Untuk Check In: ambil yang status "Checked Out" atau "In Use"
         statusFilter = 'Checked Out';
       } else if (formData.transaction_type === 'check_out') {
-        // Untuk Check Out: ambil yang status "Available"
         statusFilter = 'Available';
-      } else if (formData.transaction_type === 'repair') {
-        // Untuk Repair: bisa ambil semua kecuali yang sudah lost
-        // Tidak ada filter khusus, tapi bisa filter yang bukan 'Lost'
-      } else if (formData.transaction_type === 'lost') {
-        // Untuk Lost: biasanya yang sedang dipinjam atau available
-        // Tidak ada filter khusus
       }
-      // Untuk maintenance dan transfer: ambil semua
 
       const response = await productService.getProducts(1, 100, statusFilter ? {
         status: statusFilter
       } : {});
 
       if (response.success && response.data) {
-        const filteredProducts = response.data.products;
-
-        // Ensure all products have required properties (dengan safe access)
-        const safeProducts = filteredProducts.map(product => ({
-          ...product,
-          name: product.name || product.product_id || 'Unknown Product',
-          brand: product.brand || null,
-          model: product.model || null,
-          serial_number: product.serial_number || null,
-          status: product.status || 'Unknown',
-          condition: product.condition || 'Good',
-          location: product.location || null,
-          description: product.description || null,
-          quantity: product.quantity || 0
-        }));
-
-        setProducts(safeProducts);
-        console.log(`✅ Products loaded for ${formData.transaction_type}:`, safeProducts.length);
+        setProducts(response.data.products);
+        console.log(`✅ Products loaded for ${formData.transaction_type}:`, response.data.products.length);
       } else {
         throw new Error(response.message || 'Failed to load products');
       }
@@ -167,19 +173,22 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     }
   };
 
-  // Add useEffect to reload products when transaction type changes
   useEffect(() => {
-    // Reload products ketika transaction type berubah
     if (formData.transaction_type) {
       loadProducts();
+      
+      // Load tickets jika checkout
+      if (formData.transaction_type === 'check_out') {
+        loadActiveTickets();
+      } else {
+        // Clear ticket selection jika bukan checkout
+        setSelectedTicket('');
+      }
     }
   }, [formData.transaction_type]);
 
   useEffect(() => {
-    // Populate form when currentTransaction is loaded (edit mode)
     if (currentTransaction && mode === 'edit') {
-      console.log('📝 Populating form with transaction data:', currentTransaction);
-
       setFormData({
         transaction_type: currentTransaction.transaction_type,
         reference_no: currentTransaction.reference_no,
@@ -188,10 +197,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
         location: currentTransaction.location,
         notes: currentTransaction.notes,
         status: currentTransaction.status,
-        items: [] // Will be populated separately
+        items: []
       });
 
-      // Populate items
       const transactionItems = currentTransaction.items || currentTransaction.TransactionItems || [];
       const formattedItems: CreateTransactionItemRequest[] = transactionItems.map(item => ({
         product_id: item.product_id,
@@ -203,6 +211,14 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       }));
 
       setItems(formattedItems);
+
+      // NEW: Set ticket jika ada produk yang memiliki ticket yang sama
+      if (transactionItems.length > 0) {
+        const firstProductWithTicket = transactionItems.find(item => item.product?.ticketing_id);
+        if (firstProductWithTicket?.product?.ticketing_id) {
+          setSelectedTicket(firstProductWithTicket.product.ticketing_id);
+        }
+      }
     }
   }, [currentTransaction, mode]);
 
@@ -214,16 +230,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
   const loadTransaction = async () => {
     if (!id) return;
-
     const transactionId = parseInt(id);
     if (isNaN(transactionId)) {
       console.error('Invalid transaction ID:', id);
       navigate('/transactions');
       return;
     }
-
-    console.log('🔄 Loading transaction for edit:', transactionId);
-
     const transaction = await getTransactionById(transactionId);
     if (!transaction) {
       console.error('Transaction not found:', transactionId);
@@ -231,7 +243,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     }
   };
 
-  // 6. UPDATE: Enhanced validation untuk repair dan lost
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
@@ -247,7 +258,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       errors.transaction_type = 'Transaction type is required';
     }
 
-    // Enhanced: Required notes untuk repair dan lost
     if ((requiredNotes || formData.transaction_type === 'repair' || formData.transaction_type === 'lost')
       && !formData.notes?.trim()) {
       errors.notes = `Notes are required for ${TRANSACTION_TYPE_LABELS[formData.transaction_type as keyof typeof TRANSACTION_TYPE_LABELS]}`;
@@ -257,7 +267,18 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       errors.items = 'At least one item is required';
     }
 
-    // Validate each item
+    // NEW: Validasi ticket untuk checkout dengan produk yang require ticket
+    if (formData.transaction_type === 'check_out') {
+      const hasProductsRequiringTicket = items.some(item => {
+        const product = getProductById(item.product_id);
+        return product?.is_linked_to_ticketing;
+      });
+
+      if (hasProductsRequiringTicket && !selectedTicket) {
+        errors.selectedTicket = 'Ticket selection is required for products with ticket integration';
+      }
+    }
+
     items.forEach((item, index) => {
       if (!item.product_id) {
         errors[`item_${index}_product`] = 'Product is required';
@@ -271,12 +292,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-
-
   const handleInputChange = (field: keyof CreateTransactionRequest, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-
-    // Clear validation error when user starts typing
     if (validationErrors[field]) {
       setValidationErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -287,46 +304,36 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       i === index ? { ...item, [field]: value } : item
     ));
 
-    // Clear validation errors for this item
     const errorKey = `item_${index}_${field}`;
     if (validationErrors[errorKey]) {
       setValidationErrors(prev => ({ ...prev, [errorKey]: '' }));
     }
   };
 
-  // 7. UPDATE: Enhanced product validation untuk repair dan lost
+  // NEW: Handle ticket selection
+  const handleTicketSelection = (ticketId: string) => {
+    setSelectedTicket(ticketId);
+    
+    // Clear validation error
+    if (validationErrors.selectedTicket) {
+      setValidationErrors(prev => ({ ...prev, selectedTicket: '' }));
+    }
+  };
+
   const handleAddItem = (product: Product) => {
-    // Enhanced validation berdasarkan transaction type
     if (formData.transaction_type === 'check_in' && !['Checked Out', 'In Use'].includes(product.status)) {
-      setProductError(`For Check In: only "Checked Out" or "In Use" products can be selected. "${product.name}" is ${product.status}`);
+      setProductError(`For Check In: only "Checked Out" or "In Use" products can be selected. "${product.brand} ${product.model}" is ${product.status}`);
       return;
     }
 
     if (formData.transaction_type === 'check_out' && product.status !== 'Available') {
-      setProductError(`For Check Out: only "Available" products can be selected. "${product.name}" is ${product.status}`);
+      setProductError(`For Check Out: only "Available" products can be selected. "${product.brand} ${product.model}" is ${product.status}`);
       return;
     }
 
-    if (formData.transaction_type === 'repair') {
-      // Untuk repair: tidak bisa pilih yang sudah lost atau disposed
-      if (['Lost', 'Disposed'].includes(product.status)) {
-        setProductError(`For Repair: cannot select products that are "${product.status}". "${product.name}" is ${product.status}`);
-        return;
-      }
-    }
-
-    if (formData.transaction_type === 'lost') {
-      // Untuk lost: tidak bisa pilih yang sudah lost
-      if (product.status === 'Lost') {
-        setProductError(`Product "${product.name}" is already marked as Lost`);
-        return;
-      }
-    }
-
-    // Check if already added
     const isAlreadyAdded = items.some(item => item.product_id === product.product_id);
     if (isAlreadyAdded) {
-      setProductError(`Product "${product.name}" is already added to this transaction`);
+      setProductError(`Product "${product.brand} ${product.model}" is already added to this transaction`);
       return;
     }
 
@@ -334,7 +341,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       product_id: product.product_id,
       quantity: 1,
       condition_before: product.condition || 'Good',
-      condition_after: formData.transaction_type === 'lost' ? 'Poor' : '', // Default untuk lost
+      condition_after: formData.transaction_type === 'lost' ? 'Poor' : '',
       status: 'processed',
       notes: ''
     };
@@ -342,14 +349,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     setItems(prev => [...prev, newItem]);
     setShowAddItem(false);
     setSearchProduct('');
-
-    // Clear errors
     setProductError(null);
+
     if (validationErrors.items) {
       setValidationErrors(prev => ({ ...prev, items: '' }));
     }
-
-    console.log(`✅ Added product: ${product.name} (ID: ${product.product_id}) for ${formData.transaction_type}`);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -359,12 +363,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    console.log('🚀 Form submission started');
-    console.log('📝 Form data:', formData);
-    console.log('📦 Items:', items);
-
     if (!validateForm()) {
-      console.log('❌ Form validation failed:', validationErrors);
       return;
     }
 
@@ -372,9 +371,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
     try {
       if (mode === 'create') {
-        console.log('📤 Creating new transaction');
-
-        const createData: CreateTransactionRequest = {
+        // NEW: Enhanced create data dengan single ticket
+        const createData: CreateTransactionRequest & { selected_ticket?: string } = {
           transaction_type: formData.transaction_type!,
           reference_no: formData.reference_no,
           first_person: formData.first_person!,
@@ -382,20 +380,23 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
           location: formData.location!,
           notes: formData.notes,
           status: formData.status,
-          items: items
+          items: items,
+          // NEW: Kirim single ticket untuk semua produk yang require ticket
+          ...(selectedTicket && { selected_ticket: selectedTicket })
         };
+
+        console.log('🚀 Submitting transaction with single ticket:', {
+          transaction_type: createData.transaction_type,
+          items_count: createData.items.length,
+          selected_ticket: createData.selected_ticket
+        });
 
         const success = await createTransaction(createData);
 
         if (success) {
-          console.log('✅ Transaction created successfully');
           navigate('/transactions');
-        } else {
-          console.log('❌ Transaction creation failed');
         }
       } else if (mode === 'edit' && id && currentTransaction) {
-        console.log('📤 Updating transaction');
-
         const updateData = {
           reference_no: formData.reference_no,
           first_person: formData.first_person!,
@@ -403,16 +404,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
           location: formData.location!,
           notes: formData.notes,
           status: formData.status
-          // Note: Items update might need separate endpoint
         };
 
         const success = await updateTransaction(parseInt(id), updateData);
 
         if (success) {
-          console.log('✅ Transaction updated successfully');
           navigate(`/transactions/${id}`);
-        } else {
-          console.log('❌ Transaction update failed');
         }
       }
     } catch (error) {
@@ -426,20 +423,14 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     return products.find(p => p.product_id === productId);
   };
 
-  // MODIFIED: Search products based on transaction type
   const handleSearchProducts = async (query: string) => {
     if (!query.trim()) {
-      // Jika search kosong, load products sesuai transaction type
       await loadProducts();
       return;
     }
 
     setLoadingProducts(true);
     try {
-      console.log('🔍 Searching products:', query);
-      console.log('🎯 For transaction type:', formData.transaction_type);
-
-      // Filter berdasarkan transaction type
       let statusFilter: string | undefined;
 
       if (formData.transaction_type === 'check_in') {
@@ -455,7 +446,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
       if (response.success && response.data) {
         setProducts(response.data.products);
-        console.log('✅ Search results:', response.data.products.length);
       }
     } catch (error: any) {
       console.error('❌ Search failed:', error);
@@ -467,6 +457,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
   const totalItems = items.length;
   const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+  
+  // NEW: Check berapa produk yang require ticket
+  const productsRequiringTicket = items.filter(item => {
+    const product = getProductById(item.product_id);
+    return product?.is_linked_to_ticketing;
+  }).length;
 
   const filteredProducts = products.filter(product =>
     product.product_id.toLowerCase().includes(searchProduct.toLowerCase()) ||
@@ -477,7 +473,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
   if (isLoading && mode === 'edit') {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors duration-200">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="h-32 w-32 animate-spin text-blue-500 dark:text-blue-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading transaction...</p>
@@ -487,9 +483,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-      {/* Header */}
-    
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Error Display */}
         {error && (
@@ -499,10 +493,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                 <AlertCircle className="h-5 w-5 text-red-400 dark:text-red-500 mr-2" />
                 <span className="text-red-800 dark:text-red-300">{error}</span>
               </div>
-              <button
-                onClick={clearError}
-                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200"
-              >
+              <button onClick={clearError} className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -528,8 +519,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         <select
                           value={formData.transaction_type}
                           onChange={(e) => handleInputChange('transaction_type', e.target.value)}
-                          className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.transaction_type ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                            }`}
+                          className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${validationErrors.transaction_type ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'}`}
                         >
                           {Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => (
                             <option key={value} value={value}>{label}</option>
@@ -551,7 +541,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         value={formData.reference_no || ''}
                         onChange={(e) => handleInputChange('reference_no', e.target.value)}
                         placeholder="Auto-generated if empty"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
 
@@ -565,8 +555,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         value={formData.first_person || ''}
                         onChange={(e) => handleInputChange('first_person', e.target.value)}
                         placeholder="Enter person name"
-                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.first_person ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                          }`}
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${validationErrors.first_person ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'}`}
                       />
                       {validationErrors.first_person && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.first_person}</p>
@@ -583,7 +572,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         value={formData.second_person || ''}
                         onChange={(e) => handleInputChange('second_person', e.target.value)}
                         placeholder="Optional second person"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
 
@@ -597,14 +586,48 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         value={formData.location || ''}
                         onChange={(e) => handleInputChange('location', e.target.value)}
                         placeholder="Enter location"
-                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.location ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                          }`}
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${validationErrors.location ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'}`}
                       />
                       {validationErrors.location && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.location}</p>
                       )}
                     </div>
 
+                    {/* NEW: Single Ticket Selection untuk Checkout */}
+                    {formData.transaction_type === 'check_out' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          <Ticket className="inline h-4 w-4 mr-1" />
+                          Select Ticket {productsRequiringTicket > 0 && <span className="text-red-500">*</span>}
+                        </label>
+                        <select
+                          value={selectedTicket}
+                          onChange={(e) => handleTicketSelection(e.target.value)}
+                          disabled={loadingTickets}
+                          className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${validationErrors.selectedTicket ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'}`}
+                        >
+                          <option value="">
+                            {loadingTickets ? 'Loading tickets...' : 'Select a ticket...'}
+                          </option>
+                          {activeTickets.map(ticketId => (
+                            <option key={ticketId} value={ticketId}>
+                              {ticketId}
+                            </option>
+                          ))}
+                        </select>
+                        {validationErrors.selectedTicket && (
+                          <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.selectedTicket}</p>
+                        )}
+                        {ticketError && (
+                          <p className="mt-1 text-sm text-orange-600 dark:text-orange-400">
+                            ⚠️ {ticketError}
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          This ticket will be assigned to all products that require ticket integration
+                        </p>
+                      </div>
+                    )}
 
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -614,7 +637,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       <textarea
                         value={formData.notes || ''}
                         onChange={(e) => handleInputChange('notes', e.target.value)}
-                        rows={requiredNotes ? 4 : 3} // More rows if required
+                        rows={requiredNotes ? 4 : 3}
                         placeholder={
                           requiredNotes
                             ? formData.transaction_type === 'repair'
@@ -624,20 +647,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                                 : "Additional notes..."
                             : "Additional notes..."
                         }
-                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors.notes ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                          }`}
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${validationErrors.notes ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'}`}
                       />
                       {validationErrors.notes && (
                         <p className="mt-1 text-sm text-red-600 dark:text-red-400">{validationErrors.notes}</p>
                       )}
-                      {requiredNotes && (
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          {formData.transaction_type === 'repair' && "Detail description helps maintenance team understand the issue"}
-                          {formData.transaction_type === 'lost' && "Complete information helps with asset recovery and accountability"}
-                        </p>
-                      )}
                     </div>
-
                   </div>
                 </div>
               </div>
@@ -648,20 +663,17 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="text-lg font-medium text-gray-900 dark:text-white">Items</h2>
-                      {formData.transaction_type && (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                          {formData.transaction_type === 'check_in'
-                            ? 'Only "Checked Out" items can be selected'
-                            : formData.transaction_type === 'check_out'
-                              ? 'Only "Available" items can be selected'
-                              : 'All items can be selected'}
+                      {formData.transaction_type === 'check_out' && selectedTicket && (
+                        <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                          <Ticket className="inline h-3 w-3 mr-1" />
+                          Selected ticket: <span className="font-mono">{selectedTicket}</span>
                         </p>
                       )}
                     </div>
                     <button
                       type="button"
                       onClick={() => setShowAddItem(true)}
-                      className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors duration-200"
+                      className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600"
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       Add Item
@@ -684,7 +696,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowAddItem(true)}
-                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors duration-200"
+                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600"
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Add First Item
@@ -694,107 +706,133 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                     <div className="space-y-4">
                       {items.map((item, index) => {
                         const product = getProductById(item.product_id);
+                        const requiresTicket = product?.is_linked_to_ticketing;
+                        
                         return (
-                          <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200">
+                          <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                             <div className="flex items-start justify-between">
-                              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                  <h4 className="font-medium text-gray-900 dark:text-white">
-                                    {product?.name || `Product ${item.product_id}`}
-                                  </h4>
-                                  <p className="text-sm text-gray-500 dark:text-gray-400">ID: {item.product_id}</p>
-                                  {product && (
-                                    <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                                      Status: <span className={`font-medium ${product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
-                                        product.status === 'Checked Out' ? 'text-red-600 dark:text-red-400' :
-                                          'text-orange-600 dark:text-orange-400'
-                                        }`}>{product.status}</span>
-                                    </div>
-                                  )}
-
-                                  <div className="mt-2">
-                                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                      Quantity *
-                                    </label>
-                                    <input
-                                      type="number"
-                                      value={item.quantity}
-                                      onChange={(e) => {
-                                        const newQuantity = parseInt(e.target.value) || 0;
-                                        handleItemChange(index, 'quantity', newQuantity);
-                                      }}
-                                      className={`w-full px-2 py-1 border rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 ${validationErrors[`item_${index}_quantity`] ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
-                                        }`}
-                                    />
-                                    {validationErrors[`item_${index}_quantity`] && (
-                                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">{validationErrors[`item_${index}_quantity`]}</p>
-                                    )}
+                              <div className="flex-1">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  {/* Product Info */}
+                                  <div>
+                                    <h4 className="font-medium text-gray-900 dark:text-white">
+                                      {product?.brand && product?.model ? `${product.brand} ${product.model}` : `Product ${item.product_id}`}
+                                    </h4>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">ID: {item.product_id}</p>
                                     {product && (
-                                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                        Available: {product.quantity}
-                                      </p>
+                                      <div className="mt-1 space-y-1">
+                                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                                          Status: <span className={`font-medium ${product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
+                                            product.status === 'Checked Out' ? 'text-red-600 dark:text-red-400' :
+                                              'text-orange-600 dark:text-orange-400'
+                                            }`}>{product.status}</span>
+                                        </div>
+                                        {/* NEW: Ticket integration indicator */}
+                                        {requiresTicket && (
+                                          <div className="flex items-center text-xs">
+                                            <Ticket className="h-3 w-3 mr-1" />
+                                            {formData.transaction_type === 'check_out' && selectedTicket ? (
+                                              <span className="text-blue-600 dark:text-blue-400">
+                                                Will be assigned to: 
+                                                <span className="ml-1 font-mono bg-blue-100 dark:bg-blue-900/30 px-1 rounded">
+                                                  {selectedTicket}
+                                                </span>
+                                              </span>
+                                            ) : (
+                                              <span className="text-orange-600 dark:text-orange-400">
+                                                Requires ticket assignment
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
                                     )}
-                                  </div>
-                                </div>
 
-                                <div>
-                                  <div className="space-y-2">
-                                    <div>
+                                    <div className="mt-2">
                                       <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        Condition Before
+                                        Quantity *
                                       </label>
-                                      <select
-                                        value={item.condition_before || ''}
-                                        onChange={(e) => handleItemChange(index, 'condition_before', e.target.value)}
-                                        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
-                                      >
-                                        <option value="">Select condition</option>
-                                        {CONDITION_OPTIONS.map(condition => (
-                                          <option key={condition} value={condition}>
-                                            {condition.replace('_', ' ').toUpperCase()}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-
-                                    <div>
-                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                        Condition After
-                                      </label>
-                                      <select
-                                        value={item.condition_after || ''}
-                                        onChange={(e) => handleItemChange(index, 'condition_after', e.target.value)}
-                                        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
-                                      >
-                                        <option value="">Select condition</option>
-                                        {CONDITION_OPTIONS.map(condition => (
-                                          <option key={condition} value={condition}>
-                                            {condition.replace('_', ' ').toUpperCase()}
-                                          </option>
-                                        ))}
-                                      </select>
+                                      <input
+                                        type="number"
+                                        value={item.quantity}
+                                        onChange={(e) => {
+                                          const newQuantity = parseInt(e.target.value) || 0;
+                                          handleItemChange(index, 'quantity', newQuantity);
+                                        }}
+                                        className={`w-full px-2 py-1 border rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${validationErrors[`item_${index}_quantity`] ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'}`}
+                                      />
+                                      {validationErrors[`item_${index}_quantity`] && (
+                                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">{validationErrors[`item_${index}_quantity`]}</p>
+                                      )}
+                                      {product && (
+                                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                          Available: {product.quantity}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
-                                </div>
 
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Item Notes
-                                  </label>
-                                  <textarea
-                                    value={item.notes || ''}
-                                    onChange={(e) => handleItemChange(index, 'notes', e.target.value)}
-                                    rows={3}
-                                    placeholder="Notes for this item..."
-                                    className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
-                                  />
+                                  {/* Conditions */}
+                                  <div>
+                                    <div className="space-y-2">
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                          Condition Before
+                                        </label>
+                                        <select
+                                          value={item.condition_before || ''}
+                                          onChange={(e) => handleItemChange(index, 'condition_before', e.target.value)}
+                                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                          <option value="">Select condition</option>
+                                          {CONDITION_OPTIONS.map(condition => (
+                                            <option key={condition} value={condition}>
+                                              {condition.replace('_', ' ').toUpperCase()}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                          Condition After
+                                        </label>
+                                        <select
+                                          value={item.condition_after || ''}
+                                          onChange={(e) => handleItemChange(index, 'condition_after', e.target.value)}
+                                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                          <option value="">Select condition</option>
+                                          {CONDITION_OPTIONS.map(condition => (
+                                            <option key={condition} value={condition}>
+                                              {condition.replace('_', ' ').toUpperCase()}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Notes */}
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                      Item Notes
+                                    </label>
+                                    <textarea
+                                      value={item.notes || ''}
+                                      onChange={(e) => handleItemChange(index, 'notes', e.target.value)}
+                                      rows={3}
+                                      placeholder="Notes for this item..."
+                                      className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                  </div>
                                 </div>
                               </div>
 
                               <button
                                 type="button"
                                 onClick={() => handleRemoveItem(index)}
-                                className="ml-4 p-2 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors duration-200"
+                                className="ml-4 p-2 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -825,6 +863,27 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       <span className="text-sm text-gray-500 dark:text-gray-400">Total Quantity:</span>
                       <span className="text-sm font-medium text-gray-900 dark:text-white">{totalQuantity}</span>
                     </div>
+                    
+                    {/* NEW: Ticket Summary */}
+                    {formData.transaction_type === 'check_out' && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Require Tickets:</span>
+                          <span className="text-sm font-medium text-orange-600 dark:text-orange-400">
+                            {productsRequiringTicket}
+                          </span>
+                        </div>
+                        {selectedTicket && (
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-500 dark:text-gray-400">Selected Ticket:</span>
+                            <span className="text-sm font-medium text-blue-600 dark:text-blue-400 font-mono">
+                              {selectedTicket}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-500 dark:text-gray-400">Status:</span>
                       <span className={`text-sm font-medium ${formData.status === 'open' ? 'text-green-600 dark:text-green-400' :
@@ -835,7 +894,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                       </span>
                     </div>
 
-                    {/* Transaction Type Info */}
                     <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-between items-start">
                         <span className="text-sm text-gray-500 dark:text-gray-400">Type:</span>
@@ -853,13 +911,50 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         </div>
                       </div>
                     </div>
+
+                    {/* NEW: Active Tickets Summary untuk Checkout */}
+                    {formData.transaction_type === 'check_out' && activeTickets.length > 0 && (
+                      <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            <Ticket className="inline h-4 w-4 mr-1" />
+                            Available Tickets
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {activeTickets.length} total
+                          </span>
+                        </div>
+                        <div className="max-h-32 overflow-y-auto">
+                          <div className="space-y-1">
+                            {activeTickets.slice(0, 5).map(ticketId => (
+                              <div 
+                                key={ticketId} 
+                                className={`text-xs font-mono px-2 py-1 rounded cursor-pointer transition-colors ${
+                                  selectedTicket === ticketId 
+                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                }`}
+                                onClick={() => handleTicketSelection(ticketId)}
+                              >
+                                {ticketId}
+                              </div>
+                            ))}
+                            {activeTickets.length > 5 && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                                +{activeTickets.length - 5} more
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-6 space-y-3">
                     <button
                       type="submit"
                       disabled={isSubmitting || isLoading}
-                      className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                      className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isSubmitting ? (
                         <>
@@ -877,7 +972,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                     <button
                       type="button"
                       onClick={() => navigate('/transactions')}
-                      className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
+                      className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
                     >
                       Cancel
                     </button>
@@ -889,7 +984,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
         </form>
       </div>
 
-      {/* Add Item Modal */}
+      {/* Add Item Modal dengan Ticket Integration Info */}
       {showAddItem && (
         <div className="fixed inset-0 bg-gray-600 dark:bg-gray-900 bg-opacity-50 dark:bg-opacity-75 overflow-y-auto h-full w-full z-50">
           <div className="relative top-20 mx-auto p-5 border border-gray-200 dark:border-gray-700 w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
@@ -897,19 +992,27 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white">Add Item</h3>
-                  {formData.transaction_type && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      {formData.transaction_type === 'check_in'
-                        ? 'Showing only "Checked Out" items'
-                        : formData.transaction_type === 'check_out'
-                          ? 'Showing only "Available" items'
-                          : 'Showing all items'}
-                    </p>
-                  )}
+                  <div className="space-y-1 mt-1">
+                    {formData.transaction_type && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {formData.transaction_type === 'check_in'
+                          ? 'Showing only "Checked Out" items'
+                          : formData.transaction_type === 'check_out'
+                            ? 'Showing only "Available" items'
+                            : 'Showing all items'}
+                      </p>
+                    )}
+                    {formData.transaction_type === 'check_out' && selectedTicket && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400">
+                        <Ticket className="inline h-3 w-3 mr-1" />
+                        Selected ticket: <span className="font-mono">{selectedTicket}</span>
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={() => setShowAddItem(false)}
-                  className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-200"
+                  className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -925,15 +1028,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                     type="text"
                     placeholder="Search by name, ID, brand, model, or serial..."
                     value={searchProduct}
-                    onChange={(e) => {
-                      setSearchProduct(e.target.value);
-                    }}
+                    onChange={(e) => setSearchProduct(e.target.value)}
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
                         handleSearchProducts(searchProduct);
                       }
                     }}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -960,49 +1061,29 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                     <Package className="h-8 w-8 mx-auto mb-2" />
                     <p>No products found</p>
-                    <p className="text-sm">
-                      {searchProduct ? 'Try searching with different keywords' :
-                        formData.transaction_type === 'check_in' ? 'No "Checked Out" products available' :
-                          formData.transaction_type === 'check_out' ? 'No "Available" products in stock' :
-                            'No products available'}
-                    </p>
-                    {!searchProduct && (
-                      <button
-                        onClick={loadProducts}
-                        className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        Refresh Products
-                      </button>
-                    )}
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {filteredProducts.map(product => {
-                      // Check availability based on transaction type
                       const isAlreadyAdded = items.some(item => item.product_id === product.product_id);
-
                       let cannotSelect = isAlreadyAdded;
                       let reason = '';
 
                       if (formData.transaction_type === 'check_in') {
-                        // Untuk Check In: hanya bisa pilih yang "Checked Out"
                         if (product.status !== 'Checked Out') {
                           cannotSelect = true;
-                          reason = `Check In requires "Checked Out" status (current: ${product.status})`;
+                          reason = `Check In requires "Checked Out" status`;
                         }
                       } else if (formData.transaction_type === 'check_out') {
-                        // Untuk Check Out: hanya bisa pilih yang "Available"
                         if (product.status !== 'Available') {
                           cannotSelect = true;
-                          reason = `Check Out requires "Available" status (current: ${product.status})`;
+                          reason = `Check Out requires "Available" status`;
                         }
-                        // Tambahan validasi untuk check out: cek stock
                         if (product.quantity <= 0) {
                           cannotSelect = true;
                           reason = 'Out of stock';
                         }
                       }
-                      // Untuk transaction type lain: bisa pilih semua
 
                       if (isAlreadyAdded) {
                         reason = 'Already added';
@@ -1012,36 +1093,30 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                         <div
                           key={product.product_id}
                           onClick={() => !cannotSelect && handleAddItem(product)}
-                          className={`p-3 border rounded-lg transition-colors duration-200 ${cannotSelect
+                          className={`p-3 border rounded-lg transition-colors ${cannotSelect
                             ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 cursor-not-allowed opacity-60'
                             : 'border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-blue-300 dark:hover:border-blue-600'
                             }`}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900 dark:text-white">{product.name}</div>
+                              <div className="font-medium text-gray-900 dark:text-white">
+                                {product.brand && product.model ? `${product.brand} ${product.model}` : product.product_id}
+                              </div>
                               <div className="text-sm text-gray-500 dark:text-gray-400">ID: {product.product_id}</div>
 
-                              {/* Product details dari API real */}
-                              {product.brand && (
-                                <div className="text-xs text-gray-400 dark:text-gray-500">Brand: {product.brand}</div>
-                              )}
-                              {product.model && (
-                                <div className="text-xs text-gray-400 dark:text-gray-500">Model: {product.model}</div>
-                              )}
-                              {product.serial_number && (
-                                <div className="text-xs text-gray-400 dark:text-gray-500">S/N: {product.serial_number}</div>
-                              )}
-                              {product.description && (
-                                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{product.description}</div>
+                              {/* NEW: Ticket integration indicator */}
+                              {product.is_linked_to_ticketing && (
+                                <div className="flex items-center mt-1 text-xs text-blue-600 dark:text-blue-400">
+                                  <Ticket className="h-3 w-3 mr-1" />
+                                  <span>Will use selected ticket</span>
+                                </div>
                               )}
 
                               <div className="flex items-center space-x-4 mt-1">
                                 <div className={`text-xs font-medium ${product.status === 'Available' ? 'text-green-600 dark:text-green-400' :
                                   product.status === 'Checked Out' ? 'text-red-600 dark:text-red-400' :
-                                    product.status === 'Maintenance' ? 'text-orange-600 dark:text-orange-400' :
-                                      product.status === 'Repair' ? 'text-yellow-600 dark:text-yellow-400' :
-                                        'text-gray-600 dark:text-gray-400'
+                                    'text-orange-600 dark:text-orange-400'
                                   }`}>
                                   Status: {product.status}
                                 </div>
@@ -1054,49 +1129,25 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
                                   }`}>
                                   Qty: {product.quantity}
                                 </div>
-                                {product.location && (
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                                    Location: {product.location}
-                                  </div>
-                                )}
                               </div>
 
-                              {/* Warning messages */}
-                              {cannotSelect && !isAlreadyAdded && reason && (
+                              {cannotSelect && reason && (
                                 <div className="mt-2 text-xs text-red-600 dark:text-red-400 font-medium">
                                   {reason}
                                 </div>
                               )}
                             </div>
 
-                            {/* Product Image */}
-                            {product.img_product && (
-                              <div className="ml-3">
-                                <img
-                                  src={productService.getImageUrl(product.img_product)}
-                                  alt={product.name}
-                                  className="w-12 h-12 object-cover rounded border border-gray-200 dark:border-gray-600"
-                                  onError={(e) => {
-                                    // Hide image if failed to load
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              </div>
-                            )}
-
-                            {/* Status badges */}
                             <div className="ml-2 flex flex-col gap-1">
                               {isAlreadyAdded && (
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                                   Added
                                 </span>
                               )}
-                              {cannotSelect && !isAlreadyAdded && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                                  {formData.transaction_type === 'check_in' && product.status !== 'Checked Out' ? 'Need Checked Out' :
-                                    formData.transaction_type === 'check_out' && product.status !== 'Available' ? 'Not Available' :
-                                      formData.transaction_type === 'check_out' && product.quantity <= 0 ? 'No Stock' :
-                                        'Cannot Select'}
+                              {product.is_linked_to_ticketing && formData.transaction_type === 'check_out' && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                                  <Ticket className="h-3 w-3 mr-1" />
+                                  Ticket
                                 </span>
                               )}
                             </div>
@@ -1111,13 +1162,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               <div className="mt-6 flex justify-end space-x-3">
                 <button
                   onClick={() => setShowAddItem(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => navigate('/scanner')}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors duration-200"
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600"
                 >
                   <ScanLine className="h-4 w-4 mr-2" />
                   Use Scanner

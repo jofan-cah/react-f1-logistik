@@ -1,7 +1,7 @@
 // src/types/transaction.types.ts
 
 export interface Product {
-  product_id: string; // Changed from 'id' to match backend
+  product_id: string;
   name?: string;
   brand?: string;
   model?: string;
@@ -11,13 +11,17 @@ export interface Product {
     name: string;
     code: string;
   };
-  condition: 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged'; // Updated to match backend validation
+  condition: 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged';
   status: 'Available' | 'In Use' | 'Checked Out' | 'Maintenance' | 'Under Maintenance' | 'Lost' | 'Repair' | 'Damaged' | 'Disposed';
   location?: string;
   quantity?: number;
   last_maintenance_date?: string;
   created_at: string;
   updated_at: string;
+  
+  // NEW: Ticketing integration fields
+  is_linked_to_ticketing?: boolean;
+  ticketing_id?: string | null;
 }
 
 export interface TransactionItem {
@@ -27,8 +31,8 @@ export interface TransactionItem {
   quantity: number;
   condition_before?: 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged';
   condition_after?: 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged';
-  breakdown_quantity?: number; // Added from backend
-  breakdown_unit?: string; // Added from backend
+  breakdown_quantity?: number;
+  breakdown_unit?: string;
   status: 'processed' | 'pending';
   notes?: string;
   created_at?: string;
@@ -36,38 +40,43 @@ export interface TransactionItem {
   
   // Relations
   product?: Product;
-  Product?: Product; // Alternative relation name
+  Product?: Product;
 }
 
 export interface Transaction {
   id?: number;
-  transaction_type: 'check_out' | 'check_in' | 'transfer' | 'maintenance' | 'repair' | 'lost'; // Updated types from backend
+  transaction_type: 'check_out' | 'check_in' | 'transfer' | 'maintenance' | 'repair' | 'lost';
   reference_no?: string;
   first_person: string;
   second_person?: string;
   location: string;
   transaction_date?: string;
   notes?: string;
-  status: 'open' | 'closed' | 'pending'; // Updated from backend
+  status: 'open' | 'closed' | 'pending';
   created_by?: string;
   created_at?: string;
   updated_at?: string;
   
   // Relations
   items?: TransactionItem[];
-  TransactionItems?: TransactionItem[]; // Alternative relation name from backend
+  TransactionItems?: TransactionItem[];
 }
 
+// NEW: Enhanced create request with ticketing
 export interface CreateTransactionRequest {
   transaction_type: Transaction['transaction_type'];
   reference_no?: string;
   first_person: string;
   second_person?: string;
   location: string;
-  transaction_date?: string; // Added from backend
+  transaction_date?: string;
   notes?: string;
   status?: Transaction['status'];
   items: CreateTransactionItemRequest[];
+  
+  // NEW: Ticketing options - choose one approach
+  selected_ticket?: string; // Single ticket for all products (TransactionForm approach)
+  ticket_assignments?: Record<string, string>; // Per-product ticket assignment (Scanner approach)
 }
 
 export interface CreateTransactionItemRequest {
@@ -75,8 +84,8 @@ export interface CreateTransactionItemRequest {
   quantity?: number;
   condition_before?: 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged';
   condition_after?: 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged';
-  breakdown_quantity?: number; // Added from backend
-  breakdown_unit?: string; // Added from backend
+  breakdown_quantity?: number;
+  breakdown_unit?: string;
   status?: 'processed' | 'pending';
   notes?: string;
 }
@@ -91,6 +100,18 @@ export interface UpdateTransactionRequest {
   status?: Transaction['status'];
 }
 
+
+export interface ActiveTicketsResponse {
+  success: boolean;
+  data: {
+    tickets: string[];
+    count: number;
+    fetched_at: string;
+  };
+  message?: string;
+}
+
+// Existing types continue...
 export interface TransactionQueryParams {
   page?: number;
   limit?: number;
@@ -101,8 +122,8 @@ export interface TransactionQueryParams {
   search?: string;
   sort_by?: string;
   sort_order?: 'ASC' | 'DESC';
-  location?: string; // Added from backend filtering
-  created_by?: string; // Added from backend filtering
+  location?: string;
+  created_by?: string;
 }
 
 export interface TransactionFilters {
@@ -154,20 +175,26 @@ export interface ApiResponse<T> {
   count?: number;
 }
 
-// Statistics from backend
+// Statistics with ticket integration
 export interface TransactionStats {
   total: number;
   byStatus: {
     open: number;
     closed: number;
+    pending: number;
   };
   byType: {
     check_out: number;
     check_in: number;
     transfer: number;
     maintenance: number;
-    repair?: number; // New
-    lost?: number; // New
+    repair?: number;
+    lost?: number;
+  };
+  // NEW: Ticket integration stats
+  ticket_integration?: {
+    products_with_tickets: number;
+    active_ticket_assignments: number;
   };
   recent: Transaction[];
   byLocation: Array<{
@@ -184,6 +211,7 @@ export interface TransactionFormErrors {
   first_person?: string;
   location?: string;
   items?: string;
+  selectedTicket?: string; // NEW: Ticket validation error
   [key: string]: string | undefined;
 }
 
@@ -203,6 +231,7 @@ export interface TransactionExportOptions {
   transaction_type?: Transaction['transaction_type'];
   status?: Transaction['status'];
   include_items?: boolean;
+  include_tickets?: boolean; // NEW: Include ticket info in export
 }
 
 // Utility types
@@ -214,14 +243,14 @@ export type TransactionStatusLabel = {
   [K in Transaction['status']]: string;
 };
 
-// Updated labels to match backend
+// Updated labels
 export const TRANSACTION_TYPE_LABELS: TransactionTypeLabel = {
   check_out: 'Check Out',
   check_in: 'Check In',
   transfer: 'Transfer',
   maintenance: 'Maintenance',
-  repair: 'Repair', // New
-  lost: 'Lost' // New
+  repair: 'Repair',
+  lost: 'Lost'
 };
 
 export const TRANSACTION_STATUS_LABELS: TransactionStatusLabel = {
@@ -230,7 +259,7 @@ export const TRANSACTION_STATUS_LABELS: TransactionStatusLabel = {
   pending: 'Pending'
 };
 
-// Valid condition options from backend validation
+// Valid condition options
 export const CONDITION_OPTIONS = [
   'New',
   'Good', 
@@ -239,12 +268,12 @@ export const CONDITION_OPTIONS = [
   'Damaged'
 ] as const;
 
-// Valid transaction types from backend validation
+// Valid transaction types
 export const VALID_TRANSACTION_TYPES = [
   'check_out',
   'check_in', 
   'transfer',
   'maintenance',
-  'repair', // New
-  'lost' // New
+  'repair',
+  'lost'
 ] as const;

@@ -1,4 +1,4 @@
-// src/store/useTransactionStore.ts
+// src/store/useTransactionStore.ts - FINAL VERSION dengan ticket support
 import { create } from 'zustand';
 import {
   Transaction,
@@ -34,7 +34,7 @@ interface TransactionStore {
   searchResults: Transaction[];
   isSearching: boolean;
   
-  // Statistics (matches backend response)
+  // Statistics
   stats: TransactionStats | null;
   
   // Loading states for specific actions
@@ -77,6 +77,13 @@ interface TransactionStore {
   clearCurrentTransaction: () => void;
   refreshTransactions: () => Promise<void>;
   resetStore: () => void;
+  
+  // Utility methods
+  getTransactionById_local: (id: number) => Transaction | null;
+  getTransactionsByType: (type: string) => Transaction[];
+  getTransactionsByStatus: (status: string) => Transaction[];
+  isAnyLoading: () => boolean;
+  getStatsDisplay: () => any;
 }
 
 export const useTransactionStore = create<TransactionStore>((set, get) => ({
@@ -129,7 +136,6 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.getTransactions(mergedParams);
       
       if (response.success && response.data) {
-        // Handle pagination from backend response
         const pagination = response.meta?.pagination;
         
         set({
@@ -172,7 +178,6 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       if (response.success && response.data) {
         set({
           currentTransaction: response.data,
-          // Also set transaction items if included
           transactionItems: response.data.items || response.data.TransactionItems || [],
           isLoading: false
         });
@@ -199,11 +204,15 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     }
   },
 
-  // Create new transaction
+  // Create new transaction dengan selected_ticket support
   createTransaction: async (data: CreateTransactionRequest) => {
     set({ isCreating: true, error: null });
     try {
-      console.log('🔄 Creating transaction:', data);
+      console.log('🔄 Creating transaction with data:', {
+        transaction_type: data.transaction_type,
+        selected_ticket: data.selected_ticket || 'none',
+        items_count: data.items?.length || 0
+      });
       
       // Frontend validation
       const validation = transactionService.validateTransactionData(data);
@@ -211,6 +220,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
         throw new Error(validation.errors.join(', '));
       }
       
+      // Langsung kirim data ke service (include selected_ticket)
       const response = await transactionService.createTransaction(data);
       
       if (response.success) {
@@ -249,12 +259,10 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.updateTransaction(id, data);
       
       if (response.success) {
-        // Update current transaction if it's the same one
         if (get().currentTransaction?.id === id && response.data) {
           set({ currentTransaction: response.data });
         }
         
-        // Refresh transactions list
         await get().fetchTransactions();
         set({ isUpdating: false });
         
@@ -289,12 +297,10 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.deleteTransaction(id);
       
       if (response.success) {
-        // Clear current transaction if it's the deleted one
         if (get().currentTransaction?.id === id) {
           set({ currentTransaction: null, transactionItems: [] });
         }
         
-        // Refresh transactions list
         await get().fetchTransactions();
         set({ isDeleting: false });
         
@@ -320,7 +326,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     }
   },
 
-  // Close transaction (uses backend endpoint)
+  // Close transaction
   closeTransaction: async (id: number) => {
     set({ isClosing: true, error: null });
     try {
@@ -329,7 +335,6 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.closeTransaction(id);
       
       if (response.success) {
-        // Update local state
         set(state => ({
           transactions: state.transactions.map(t =>
             t.id === id ? { ...t, status: 'closed' as const } : t
@@ -371,7 +376,6 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.reopenTransaction(id);
       
       if (response.success) {
-        // Update local state
         set(state => ({
           transactions: state.transactions.map(t =>
             t.id === id ? { ...t, status: 'open' as const } : t
@@ -404,7 +408,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     }
   },
 
-  // Generate QR code (backend endpoint)
+  // Generate QR code
   generateQRCode: async (id: number) => {
     set({ error: null });
     try {
@@ -429,7 +433,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     }
   },
 
-  // Add transaction item (backend endpoint)
+  // Add transaction item
   addTransactionItem: async (transactionId: number, itemData: any) => {
     set({ isUpdating: true, error: null });
     try {
@@ -438,7 +442,6 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.addTransactionItem(transactionId, itemData);
       
       if (response.success) {
-        // Refresh current transaction
         await get().getTransactionById(transactionId);
         set({ isUpdating: false });
         
@@ -464,7 +467,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     }
   },
 
-  // Remove transaction item (backend endpoint)
+  // Remove transaction item
   removeTransactionItem: async (transactionId: number, itemId: number) => {
     set({ isUpdating: true, error: null });
     try {
@@ -473,7 +476,6 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       const response = await transactionService.removeTransactionItem(transactionId, itemId);
       
       if (response.success) {
-        // Refresh current transaction
         await get().getTransactionById(transactionId);
         set({ isUpdating: false });
         
@@ -507,7 +509,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       queryParams: {
         ...state.queryParams,
         ...filters,
-        page: 1 // Reset to first page when filtering
+        page: 1
       },
       currentPage: 1
     }));
@@ -607,7 +609,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     });
   },
 
-  // Fetch transaction statistics (backend endpoint)
+  // Fetch transaction statistics
   fetchTransactionStats: async () => {
     set({ isFetchingStats: true, error: null });
     try {
@@ -711,7 +713,15 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
   },
 
   isAnyLoading: () => {
-    const { isLoading, isCreating, isUpdating, isDeleting, isClosing, isFetchingStats, isSearching } = get();
+    const { 
+      isLoading, 
+      isCreating, 
+      isUpdating, 
+      isDeleting, 
+      isClosing, 
+      isFetchingStats, 
+      isSearching
+    } = get();
     return isLoading || isCreating || isUpdating || isDeleting || isClosing || isFetchingStats || isSearching;
   },
 
@@ -723,12 +733,16 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       total: stats.total,
       open: stats.byStatus.open,
       closed: stats.byStatus.closed,
+      pending: stats.byStatus.pending || 0,
       checkOut: stats.byType.check_out,
       checkIn: stats.byType.check_in,
       repair: stats.byType.repair || 0,
       lost: stats.byType.lost || 0,
       maintenance: stats.byType.maintenance,
-      transfer: stats.byType.transfer
+      transfer: stats.byType.transfer,
+      // Ticket stats
+      productsWithTickets: stats.ticket_integration?.products_with_tickets || 0,
+      activeTicketAssignments: stats.ticket_integration?.active_ticket_assignments || 0
     };
   }
 }));
